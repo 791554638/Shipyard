@@ -213,5 +213,3 @@ kubectl apply -f k8s/ingress.yaml
 * 开启 ES 的 TLS（`xpack.security.http.ssl.enabled: true`）
 * 为 Kibana / Logstash 创建最小权限专用账户，不用 elastic 超级用户
 * 通过 CI 注入密码，绝不提交到 git
-
-<!-- dev branch flow test: 2026-09-17T23:07:55 -->
