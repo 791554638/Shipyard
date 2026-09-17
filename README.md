@@ -213,3 +213,68 @@ kubectl apply -f k8s/ingress.yaml
 * 开启 ES 的 TLS（`xpack.security.http.ssl.enabled: true`）
 * 为 Kibana / Logstash 创建最小权限专用账户，不用 elastic 超级用户
 * 通过 CI 注入密码，绝不提交到 git
+
+## 9. 贡献指南
+
+### 9.1 分支模型（Git Flow 简化版）
+
+| 分支 | 用途 | 谁能推 |
+|---|---|---|
+| `main` | 稳定可发布版本，每个 commit 对应一个 release tag | ❌ 仅通过 PR 合并 |
+| `dev` | 日常开发集成 | ✅ 直接推送 |
+| `feature/*` | 单个功能/修复，用完即删 | ✅ 直接推送 |
+
+### 9.2 工作流
+
+```bash
+# 1. 从 dev 拉功能分支
+git checkout dev
+git checkout -b feature/你的功能名
+
+# 2. 开发并提交（提交信息参考 Conventional Commits）
+git commit -m "feat: 描述你的改动"
+git push -u origin feature/你的功能名
+
+# 3. 在 GitHub 上提 PR：feature/你的功能名 → dev
+#    PR 必须通过 GitHub Actions Lint 检查 ✅
+
+# 4. PR 合并后删除功能分支
+git branch -d feature/你的功能名
+git push origin --delete feature/你的功能名
+
+# 5. 集成测试通过后，从 dev 提 PR 到 main
+# 6. main 合并后打 tag
+git tag v0.x.y
+git push --tags
+```
+
+### 9.3 提交规范（Conventional Commits）
+
+```
+feat:     新功能
+fix:      修复
+docs:     文档
+chore:    构建/工具/杂项
+refactor: 重构
+test:     测试
+```
+
+格式：`<type>(<scope>): <subject>`，scope 可选。例如 `feat(k8s): 加入 Filebeat DaemonSet`。
+
+### 9.4 PR 检查清单
+
+- [ ] 所有 YAML 文件通过 `yamllint`（GitHub Actions 自动跑）
+- [ ] shell 脚本通过 `shellcheck`
+- [ ] README 与代码同步（新增组件时同时更新目录结构、技术栈表）
+- [ ] 涉及 K8s manifest 时同步更新 `docs/deploy.md`
+- [ ] 不提交明文密码到 git（学习用密码例外，但生产环境务必替换）
+
+## 10. 版本与发布
+
+项目使用 [Semantic Versioning](https://semver.org/)：
+
+* 主版本（`v1.0.0`）：不兼容的架构变更
+* 次版本（`v0.1.0`）：向后兼容的新功能
+* 修订版（`v0.0.1`）：向后兼容的 bug 修复
+
+查看所有 release：[**Releases**](https://github.com/791554638/Shipyard/releases)
