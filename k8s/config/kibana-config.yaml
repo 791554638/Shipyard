@@ -1,0 +1,14 @@
+# Kibana ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kibana-config
+  namespace: cfa
+data:
+  kibana.yml: |
+    server.name: cfa-kibana
+    server.host: "0.0.0.0"
+    elasticsearch.hosts: ["http://elasticsearch:9200"]
+    i18n.locale: "zh-CN"
+    telemetry.enabled: false
+    csp.warnLegacyBrowsers: false

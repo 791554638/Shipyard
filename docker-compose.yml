@@ -1,0 +1,200 @@
+# 本地一键起依赖
+# 与 k8s/ 下的 manifest 共享 services/ 下的所有配置
+#
+# 使用方式：
+#   docker compose up -d              启动所有服务
+#   docker compose up -d mysql redis  只启动部分
+#   docker compose logs -f php        看日志
+#
+# ELK 三件套版本对齐：8.11.0
+
+services:
+
+  # ========== MySQL ==========
+  mysql:
+    image: mysql:8.0
+    container_name: cfa-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: cfa
+      MYSQL_USER: cfa
+      MYSQL_PASSWORD: cfapass
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./services/mysql/conf/my.cnf:/etc/mysql/conf.d/my.cnf:ro
+      - ./services/mysql/conf/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========== Redis ==========
+  redis:
+    image: redis:7-alpine
+    container_name: cfa-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./services/redis/conf/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-data:/data
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ========== Elasticsearch 8.11.0（启动时自动装 IK 分词器） ==========
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    container_name: cfa-elasticsearch
+    restart: unless-stopped
+    # 入口脚本：仅首次启动时下载并安装 IK 分词器，避免重复安装
+    entrypoint: ["bash", "-c"]
+    command:
+      - |
+        set -e
+        if [ ! -d /usr/share/elasticsearch/plugins/analysis-ik ]; then
+          echo "[entrypoint] First start: installing IK analyzer 8.11.0 ..."
+          bin/elasticsearch-plugin install --batch \
+            https://get.infini.cloud/elasticsearch/analysis-ik/8.11.0
+        else
+          echo "[entrypoint] IK already installed, skip"
+        fi
+        exec /usr/local/bin/docker-entrypoint.sh eswrapper
+    environment:
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      # 开启安全特性（HTTP + 用户名密码；学习用关掉 SSL）
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "false"
+      xpack.security.transport.ssl.enabled: "false"
+      # 自动设置 elastic 用户密码（首次启动时）
+      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD:-Cfa@Elastic2026}"
+    ports:
+      - "9200:9200"
+    volumes:
+      - ./services/elasticsearch/conf/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -u elastic:${ELASTIC_PASSWORD:-Cfa@Elastic2026} http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # ========== Kibana 8.11.0（依赖 ES） ==========
+  kibana:
+    image: kibana:8.11.0
+    container_name: cfa-kibana
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      # 内部连接账户必须是 kibana_system（8.x 禁止用 elastic 超级用户连接）
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: "${ELASTIC_PASSWORD:-Cfa@Elastic2026}"
+    ports:
+      - "5601:5601"
+    volumes:
+      - ./services/kibana/conf/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # ========== Logstash 8.11.0（依赖 ES；可接收 filebeat 与应用直推） ==========
+  logstash:
+    image: logstash:8.11.0
+    container_name: cfa-logstash
+    restart: unless-stopped
+    environment:
+      LS_JAVA_OPTS: "-Xms256m -Xmx256m"
+      XPACK_MONITORING_ENABLED: "false"
+      # 连接 ES 的账号（elastic 全权限，学习用）
+      ES_USER: elastic
+      ES_PASSWORD: "${ELASTIC_PASSWORD:-Cfa@Elastic2026}"
+    ports:
+      - "5044:5044"   # 应用直推（tcp/json_lines）
+      - "5045:5045"   # filebeat 接入
+      - "9600:9600"   # logstash 监控 API
+    volumes:
+      # ⚠️ logstash.yml 与 jvm.options 不能挂载！
+      #    官方镜像 entrypoint 启动时要把环境变量写回 logstash.yml，
+      #    只读挂载会报 "read-only file system" 并崩溃循环。
+      #    所有配置改为环境变量注入（见上面 environment 段）。
+      # pipeline 只读没问题（logstash 只读不写）
+      - ./services/logstash/conf/pipeline/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # ========== PHP-FPM ==========
+  php:
+    build:
+      context: ./docker/app
+    image: cfa/php:8.2
+    container_name: cfa-php
+    restart: unless-stopped
+    volumes:
+      - ./app:/var/www/html
+      - ./services/php/conf/php.ini:/usr/local/etc/php/php.ini:ro
+      # 日志写到共享目录供 filebeat 采集
+      - ./services/logs/php:/var/log/php
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DB: cfa
+      MYSQL_USER: cfa
+      MYSQL_PASSWORD: cfapass
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      LOGSTASH_HOST: logstash
+      LOGSTASH_PORT: 5044
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ========== Nginx ==========
+  nginx:
+    build:
+      context: ./docker/nginx
+    image: cfa/nginx:1.25
+    container_name: cfa-nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./app:/var/www/html:ro
+      - ./services/nginx/conf/nginx.conf:/etc/nginx/nginx.conf:ro
+      # 日志写到共享目录供 filebeat 采集
+      - ./services/logs/nginx:/var/log/nginx
+    depends_on:
+      - php
+
+  # ========== Filebeat（采集 nginx/php 日志 → logstash:5045） ==========
+  filebeat:
+    image: elastic/filebeat:8.11.0
+    container_name: cfa-filebeat
+    restart: unless-stopped
+    user: root   # 读 root 写的日志需要 root
+    command: ["filebeat", "-e", "-c", "/usr/share/filebeat/filebeat.yml"]
+    volumes:
+      - ./services/filebeat/conf/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      # 共享日志目录（与 nginx/php 一致）
+      - ./services/logs/nginx:/var/log/nginx:ro
+      - ./services/logs/php:/var/log/php:ro
+      # filebeat 自身数据
+      - filebeat-data:/usr/share/filebeat/data
+    depends_on:
+      - logstash
+
+volumes:
+  mysql-data:
+  redis-data:
+  es-data:
+  filebeat-data:

@@ -1,0 +1,17 @@
+# Elasticsearch ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: es-config
+  namespace: cfa
+data:
+  elasticsearch.yml: |
+    cluster.name: cfa-cluster
+    node.name: cfa-es-node
+    discovery.type: single-node
+    network.host: 0.0.0.0
+    http.port: 9200
+    xpack.security.enabled: true
+    xpack.security.http.ssl.enabled: false
+    xpack.security.transport.ssl.enabled: false
+    bootstrap.memory_lock: false

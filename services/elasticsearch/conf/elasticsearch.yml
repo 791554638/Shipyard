@@ -1,0 +1,29 @@
+# Elasticsearch 8.11.0 配置
+# 容器内路径：/usr/share/elasticsearch/config/elasticsearch.yml
+#
+# ⚠️ 8.x 与 7.x 关键差异：
+#   1. 默认开启 xpack.security.enabled（必须显式处理）
+#   2. 默认走 https；学习用关掉 SSL，保留用户名密码认证
+#   3. IK 插件版本必须严格匹配 ES 大版本号
+
+cluster.name: cfa-cluster
+node.name: cfa-es-node
+
+# 单节点学习用
+discovery.type: single-node
+
+# 网络
+network.host: 0.0.0.0
+http.port: 9200
+
+# ====== 安全特性（HTTP + 用户名密码）======
+# 学习用：开启 xpack 安全，但关掉 SSL（HTTP 明文 + Basic Auth）
+# 生产：必须同时开启 xpack.security.http.ssl 并配置证书
+xpack.security.enabled: true
+xpack.security.http.ssl.enabled: false
+xpack.security.transport.ssl.enabled: false
+
+# 内存
+bootstrap.memory_lock: false
+
+# IK 分词器路径（initContainer 已安装）

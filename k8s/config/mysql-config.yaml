@@ -1,0 +1,29 @@
+# MySQL ConfigMap：包含 my.cnf 与 init.sql
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config
+  namespace: cfa
+data:
+  my.cnf: |
+    [mysqld]
+    character-set-server = utf8mb4
+    collation-server = utf8mb4_unicode_ci
+    default-time-zone = '+08:00'
+    default-storage-engine = InnoDB
+    max_connections = 200
+    [client]
+    default-character-set = utf8mb4
+  init.sql: |
+    CREATE DATABASE IF NOT EXISTS cfa CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    USE cfa;
+    CREATE TABLE IF NOT EXISTS articles (
+        id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        title      VARCHAR(255)    NOT NULL,
+        content    TEXT            NOT NULL,
+        created_at TIMESTAMP       DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    INSERT INTO articles (title, content) VALUES
+        ('K8s 学习笔记 1', 'Namespace 与 Pod 的基本用法'),
+        ('K8s 学习笔记 2', 'Deployment 与 Service 的关系');

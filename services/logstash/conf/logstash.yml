@@ -1,0 +1,16 @@
+# Logstash 8.11.0 主配置（⚠️ 此文件不挂载进容器，仅作参考文档）
+#
+# 原因：官方镜像 entrypoint 启动时要把环境变量写回 logstash.yml，
+#       只读挂载会报 "read-only file system" 并崩溃循环。
+#
+# 实际生效的配置在 docker-compose.yml / k8s 的 environment 段：
+#   LS_JAVA_OPTS             → JVM 内存
+#   XPACK_MONITORING_ENABLED → 自监控
+#   ES_USER / ES_PASSWORD    → pipeline 里引用的 ES 认证
+#
+# 等价的环境变量映射（如需扩展配置，加到 environment 段即可）：
+#   http.host: "0.0.0.0"        → HTTP_HOST
+#   path.config                 → PATH_CONFIG（默认即 pipeline 目录）
+#   path.logs                   → PATH_LOGS
+#   pipeline.workers: 2         → PIPELINE_WORKERS
+#   xpack.monitoring.enabled    → XPACK_MONITORING_ENABLED

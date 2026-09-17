@@ -1,0 +1,73 @@
+# Kibana：无状态，用 Deployment
+# 认证：用户名密码由 Secret 注入
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: cfa
+spec:
+  selector:
+    app: kibana
+  ports:
+    - port: 5601
+      name: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: cfa
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      containers:
+        - name: kibana
+          image: kibana:8.11.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5601
+              name: http
+          env:
+            - name: ELASTICSEARCH_HOSTS
+              value: "http://elasticsearch:9200"
+            # 内部连接账户必须是 kibana_system（8.x 禁止用 elastic 超级用户连接）
+            # 密码需提前设置：curl -u elastic:xxx -X PUT \
+            #   es:9200/_security/user/kibana_system/_password -d '{"password":"xxx"}'
+            - name: ELASTICSEARCH_USERNAME
+              value: "kibana_system"
+            - name: ELASTICSEARCH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cfa-secret
+                  key: ELASTIC_PASSWORD
+          volumeMounts:
+            - name: config
+              mountPath: /usr/share/kibana/config
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: 5601
+            initialDelaySeconds: 60
+            periodSeconds: 15
+      volumes:
+        - name: config
+          configMap:
+            name: kibana-config
+            items:
+              - key: kibana.yml
+                path: kibana.yml

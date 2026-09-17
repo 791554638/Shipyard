@@ -1,0 +1,41 @@
+# Filebeat ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config
+  namespace: cfa
+data:
+  filebeat.yml: |
+    filebeat.inputs:
+      - type: log
+        enabled: true
+        paths:
+          - /var/log/containers/*.log
+        tags: ["k8s", "pod"]
+        fields:
+          type: k8s-pod
+        fields_under_root: true
+        json.keys_under_root: true
+        json.add_error_key: true
+
+    # ----------- K8s 元信息 -----------
+    processors:
+      - add_kubernetes_metadata:
+          host: ${NODE_NAME}
+          matchers:
+            - logs_path:
+                logs_paths:
+                  - /var/log/containers/
+
+    # ----------- 输出到 Logstash（Service DNS） -----------
+    output.logstash:
+      hosts: ["logstash:5045"]
+      ssl.enabled: false
+
+    logging.level: info
+    logging.to_files: true
+    logging.files:
+      path: /var/log/filebeat
+      name: filebeat
+      keepfiles: 3
+      permissions: 0644

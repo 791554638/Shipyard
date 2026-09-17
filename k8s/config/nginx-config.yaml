@@ -1,0 +1,47 @@
+# Nginx ConfigMap：主配置 + vhost
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: cfa
+data:
+  nginx.conf: |
+    user                    nginx;
+    worker_processes        auto;
+    error_log               /var/log/nginx/error.log warn;
+    pid                     /var/run/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+        include             /etc/nginx/mime.types;
+        default_type        application/octet-stream;
+        sendfile            on;
+        keepalive_timeout   65;
+        server_tokens       off;
+        gzip                on;
+        gzip_types          text/plain text/css application/json application/javascript text/xml;
+        include /etc/nginx/conf.d/*.conf;
+    }
+  default.conf: |
+    server {
+        listen 80 default_server;
+        server_name _;
+
+        location = /healthz {
+            access_log off;
+            return 200 "ok\n";
+        }
+
+        location / {
+            root /var/www/html/public;
+            index index.php;
+            try_files $uri $uri/ /index.php?$query_string;
+        }
+
+        location ~ \.php$ {
+            root /var/www/html/public;
+            fastcgi_pass php:9000;
+            fastcgi_index index.php;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            include fastcgi_params;
+        }
+    }

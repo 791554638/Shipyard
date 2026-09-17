@@ -1,0 +1,19 @@
+# Kibana 8.11.0 配置
+# 容器内路径：/usr/share/kibana/config/kibana.yml
+#
+# 认证：用户名密码在 docker-compose / k8s 通过环境变量注入
+# 这里只保留与服务端通信相关的静态配置
+
+server.name: cfa-kibana
+server.host: "0.0.0.0"
+
+# 连接 Elasticsearch（HTTP + Basic Auth；环境变量注入）
+# elasticsearch.hosts 由 ELASTICSEARCH_HOSTS 环境变量提供
+# 用户名密码由 ELASTICSEARCH_USERNAME / ELASTICSEARCH_PASSWORD 提供
+
+# 中文界面
+i18n.locale: "zh-CN"
+
+# 关闭 telemetry
+telemetry.enabled: false
+csp.warnLegacyBrowsers: false

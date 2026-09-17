@@ -1,0 +1,58 @@
+# Logstash ConfigMap：包含主配置 + pipeline 脚本
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: cfa
+data:
+  logstash.yml: |
+    http.host: "0.0.0.0"
+    path.config: /usr/share/logstash/pipeline
+    path.logs: /usr/share/logstash/logs
+    xpack.monitoring.enabled: false
+
+  logstash.conf: |
+    input {
+      tcp {
+        port  => 5044
+        codec => json_lines
+        tags  => ["app"]
+      }
+      beats {
+        port => 5045
+        tags => ["beats"]
+      }
+    }
+
+    filter {
+      if "app" in [tags] {
+        date {
+          match  => ["timestamp", "ISO8601"]
+          target => "@timestamp"
+        }
+      }
+      if [type] == "nginx-access" {
+        mutate { add_field => { "[@metadata][index]" => "nginx-access-%{+YYYY.MM.dd}" } }
+      } else if [type] == "php-error" {
+        mutate { add_field => { "[@metadata][index]" => "php-error-%{+YYYY.MM.dd}" } }
+      } else if [type] == "php-fpm" {
+        mutate { add_field => { "[@metadata][index]" => "php-fpm-%{+YYYY.MM.dd}" } }
+      } else if "beats" in [tags] {
+        mutate { add_field => { "[@metadata][index]" => "beats-%{+YYYY.MM.dd}" } }
+      } else {
+        mutate { add_field => { "[@metadata][index]" => "app-%{+YYYY.MM.dd}" } }
+      }
+    }
+
+    output {
+      elasticsearch {
+        hosts    => ["http://elasticsearch:9200"]
+        index    => "%{[@metadata][index]}"
+        user     => "${ES_USER:elastic}"
+        password => "${ES_PASSWORD}"
+      }
+    }
+
+  jvm.options: |
+    -Xms256m
+    -Xmx256m

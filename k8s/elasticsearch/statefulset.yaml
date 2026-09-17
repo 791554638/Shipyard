@@ -1,0 +1,123 @@
+# Elasticsearch：有状态服务 + initContainer 安装 IK 分词器
+#
+# 安全特性：
+#   - ELASTIC_PASSWORD 由 Secret 注入，首次启动自动 bootstrap elastic 用户
+#   - xpack.security.enabled: true（HTTP + 用户名密码）
+#   - xpack.security.http.ssl.enabled: false（学习用关掉 SSL）
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: cfa
+spec:
+  clusterIP: None
+  selector:
+    app: elasticsearch
+  ports:
+    - port: 9200
+      name: http
+    - port: 9300
+      name: transport
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  namespace: cfa
+spec:
+  serviceName: elasticsearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+      initContainers:
+        - name: install-ik
+          image: busybox:1.36
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              echo "[init] Downloading IK 8.11.0 ..."
+              curl -fsSL -o /tmp/ik.zip \
+                https://get.infini.cloud/elasticsearch/analysis-ik/8.11.0
+              mkdir -p /ik-target
+              unzip -q /tmp/ik.zip -d /ik-target
+              echo "[init] IK installed:"
+              ls -la /ik-target
+          volumeMounts:
+            - name: ik-shared
+              mountPath: /ik-target
+      containers:
+        - name: elasticsearch
+          image: elasticsearch:8.11.0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: discovery.type
+              value: "single-node"
+            - name: ES_JAVA_OPTS
+              value: "-Xms512m -Xmx512m"
+            - name: xpack.security.enabled
+              value: "true"
+            - name: xpack.security.http.ssl.enabled
+              value: "false"
+            # 自动 bootstrap elastic 用户密码（首次启动时）
+            - name: ELASTIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cfa-secret
+                  key: ELASTIC_PASSWORD
+          ports:
+            - containerPort: 9200
+              name: http
+            - containerPort: 9300
+              name: transport
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+            - name: config
+              mountPath: /usr/share/elasticsearch/config
+            - name: ik-shared
+              mountPath: /usr/share/elasticsearch/plugins/analysis-ik
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 1000m
+              memory: 2Gi
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: 9200
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /_cluster/health
+              port: 9200
+            initialDelaySeconds: 90
+            periodSeconds: 30
+      volumes:
+        - name: config
+          configMap:
+            name: es-config
+            items:
+              - key: elasticsearch.yml
+                path: elasticsearch.yml
+        - name: ik-shared
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: ""
+        resources:
+          requests:
+            storage: 30Gi

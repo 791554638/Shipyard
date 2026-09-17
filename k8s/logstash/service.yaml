@@ -1,0 +1,31 @@
+# Logstash Service 对外暴露
+# - 5044: NodePort（外部 Filebeat / 应用直推）
+# - 5045: ClusterIP（K8s 集群内 Filebeat DaemonSet 使用）
+# - 9600: ClusterIP（Logstash 监控 API）
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logstash
+  namespace: cfa
+  labels:
+    app: logstash
+spec:
+  selector:
+    app: logstash
+  ports:
+    # ----------- 5044: 外部接入（NodePort 30444）-----------
+    - name: tcp-app
+      port: 5044
+      targetPort: 5044
+      nodePort: 30444
+    # ----------- 5045: 集群内 Filebeat -----------
+    - name: beats
+      port: 5045
+      targetPort: 5045
+    # ----------- 9600: Logstash 监控 API -----------
+    - name: monitor
+      port: 9600
+      targetPort: 9600
+  type: NodePort

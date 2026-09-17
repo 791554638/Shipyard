@@ -1,0 +1,73 @@
+# Logstash：无状态服务
+# 认证：用户名密码由 Secret 注入
+# Service 见 k8s/logstash/service.yaml（已分离）
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: cfa
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+        - name: logstash
+          image: logstash:8.11.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5044
+              name: tcp-app
+            - containerPort: 5045
+              name: beats
+            - containerPort: 9600
+              name: monitor
+          env:
+            - name: LS_JAVA_OPTS
+              value: "-Xms256m -Xmx256m"
+            # ⚠️ logstash.yml 不能挂载（entrypoint 要写回环境变量，只读会崩）
+            #    配置全部走环境变量
+            - name: XPACK_MONITORING_ENABLED
+              value: "false"
+            - name: ES_USER
+              value: "elastic"
+            - name: ES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cfa-secret
+                  key: ELASTIC_PASSWORD
+          volumeMounts:
+            # pipeline 只读没问题（logstash 只读不写）
+            - name: pipeline
+              mountPath: /usr/share/logstash/pipeline/logstash.conf
+              subPath: logstash.conf
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          readinessProbe:
+            tcpSocket:
+              port: 5044
+            initialDelaySeconds: 60
+            periodSeconds: 15
+          livenessProbe:
+            tcpSocket:
+              port: 5044
+            initialDelaySeconds: 90
+            periodSeconds: 30
+      volumes:
+        - name: pipeline
+          configMap:
+            name: logstash-config
+            items:
+              - key: logstash.conf
+                path: logstash.conf

@@ -1,0 +1,90 @@
+# PHP-FPM：无状态，用 Deployment
+#
+# 重要：通过环境变量连接 MySQL/Redis/ES，使用 service 名（同 namespace）
+# 真实项目里这些镜像应推到镜像仓库（如阿里云 ACR、Harbor）
+# 学习阶段可以用：
+#   kubectl exec -it <pod> -n cfa -- sh  然后 docker push/pull
+# 或用本地镜像：imagePullPolicy: Never（只在 kind 等本地集群生效）
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: php
+  namespace: cfa
+spec:
+  selector:
+    app: php
+  ports:
+    - port: 9000
+      name: fpm
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php
+  namespace: cfa
+spec:
+  replicas: 2   # 演示多副本 + 负载均衡
+  selector:
+    matchLabels:
+      app: php
+  template:
+    metadata:
+      labels:
+        app: php
+    spec:
+      # 让 Pod 在所有节点均匀分布（最简化版）
+      # 生产应使用 topologySpreadConstraints / podAntiAffinity
+      containers:
+        - name: php
+          image: cfa/php:8.2   # 自定义镜像，需先构建：docker build -t cfa/php:8.2 -f docker/app/Dockerfile .
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9000
+              name: fpm
+          env:
+            - name: MYSQL_HOST
+              value: "mysql"
+            - name: MYSQL_PORT
+              value: "3306"
+            - name: MYSQL_DB
+              value: "cfa"
+            - name: MYSQL_USER
+              value: "cfa"
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cfa-secret
+                  key: MYSQL_PASSWORD
+            - name: REDIS_HOST
+              value: "redis"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: ES_HOST
+              value: "elasticsearch"
+            - name: ES_PORT
+              value: "9200"
+          volumeMounts:
+            - name: config
+              mountPath: /usr/local/etc/php/conf.d/zz-app.ini
+              subPath: zz-app.ini
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            tcpSocket:
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: php-config
+            items:
+              - key: php.ini
+                path: zz-app.ini

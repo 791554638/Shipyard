@@ -1,0 +1,102 @@
+# Nginx：无状态，反向代理 + 静态资源
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: cfa
+spec:
+  selector:
+    app: nginx
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: cfa
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: cfa/nginx:1.25   # 自定义镜像，需先构建：docker build -t cfa/nginx:1.25 -f docker/nginx/Dockerfile .
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+              name: http
+          volumeMounts:
+            - name: config-main
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+            - name: config-vhost
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+            # 应用代码（真实项目应放 git clone + PVC，或 NFS）
+            # 学习阶段用 hostPath 或 emptyDir 注入；这里用 emptyDir 演示
+            - name: app-code
+              mountPath: /var/www/html
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            initialDelaySeconds: 15
+            periodSeconds: 30
+      volumes:
+        - name: config-main
+          configMap:
+            name: nginx-config
+            items:
+              - key: nginx.conf
+                path: nginx.conf
+        - name: config-vhost
+          configMap:
+            name: nginx-config
+            items:
+              - key: default.conf
+                path: default.conf
+        # 学习阶段：把应用代码打包进 ConfigMap 即可
+        # 生产环境应该用 git 拉取 + PVC，或独立的应用镜像
+        - name: app-code
+          configMap:
+            name: app-code
+---
+# 应用代码 ConfigMap（学习用，把 app/public/index.php 打包进来）
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-code
+  namespace: cfa
+data:
+  # 真实项目推荐构建独立的应用镜像，而非用 ConfigMap 打包
+  # 这里仅作最小演示：
+  index.php: |
+    <?php
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "Hello from K8s!\n";
+    echo "Hostname: " . gethostname() . "\n";
+    echo "PHP: " . PHP_VERSION . "\n";

@@ -1,0 +1,50 @@
+# Ingress：把 Nginx 服务暴露到集群外部
+#
+# 注意：
+#   1. 需要先安装 Ingress Controller（minikube/kind 默认不一定有）
+#   2. 域名 cfa.local 仅作示例，需要在 /etc/hosts 指向集群 IP
+#   3. 生产请配置 TLS（cert-manager + Let's Encrypt）
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cfa-ingress
+  namespace: cfa
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "32m"
+spec:
+  ingressClassName: nginx   # 使用 nginx-ingress controller
+  rules:
+    # 主域名：cfa.local
+    - host: cfa.local
+      http:
+        paths:
+          # 应用入口（PHP / Nginx）
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx
+                port:
+                  number: 80
+          # Kibana 通过单独子路径
+          - path: /kibana
+            pathType: Prefix
+            backend:
+              service:
+                name: kibana
+                port:
+                  number: 5601
+---
+# ES 不建议直接暴露到公网；本地学习用可用 port-forward
+# 如果确实需要，添加：
+# - host: es.cfa.local
+#   http:
+#     paths:
+#       - path: /
+#         pathType: Prefix
+#         backend:
+#           service:
+#             name: elasticsearch
+#             port:
+#               number: 9200

@@ -1,0 +1,56 @@
+# Filebeat 8.11.0 配置
+# 自动采集 Nginx 访问日志 + PHP-FPM 慢/错误日志，推到 Logstash:5045
+
+filebeat.inputs:
+  # ----------- Nginx 访问日志 -----------
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/nginx/*.log
+    tags: ["nginx", "access"]
+    fields:
+      type: nginx-access
+    fields_under_root: true
+    json.keys_under_root: true
+    json.add_error_key: true
+
+  # ----------- PHP-FPM 慢日志 -----------
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/php/*.log
+    tags: ["php", "fpm"]
+    fields:
+      type: php-fpm
+    fields_under_root: true
+
+  # ----------- PHP 错误日志 -----------
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/php/error.log
+    tags: ["php", "error"]
+    fields:
+      type: php-error
+    fields_under_root: true
+
+# ----------- 输出到 Logstash -----------
+output.logstash:
+  hosts: ["logstash:5045"]
+  # 学习用不开启 SSL
+  ssl.enabled: false
+
+# ----------- 学习阶段调试：同时打到 stdout -----------
+# 上线时把 enabled 改回 false
+output.console:
+  pretty: false
+  enabled: false
+
+# ----------- 日志自身配置 -----------
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: /var/log/filebeat
+  name: filebeat
+  keepfiles: 3
+  permissions: 0644

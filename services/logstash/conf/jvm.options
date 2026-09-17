@@ -1,0 +1,3 @@
+# Logstash JVM 调优（学习用，轻量配置）
+-Xms256m
+-Xmx256m

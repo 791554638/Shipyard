@@ -1,0 +1,43 @@
+# ============ 编辑器 / IDE ============
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# ============ Node / 前端构建产物 ============
+node_modules/
+dist/
+build/
+*.log
+
+# ============ PHP / Composer ============
+vendor/
+.phpunit.result.cache
+
+# ============ 数据 & 运行时持久化（绝不入仓） ============
+# Elasticsearch data
+**/elasticsearch/data/
+**/elasticsearch/logs/
+
+# MySQL data
+**/mysql/data/
+
+# Redis data
+**/redis/data/
+
+# ============ K8s 临时文件 ============
+*.kubeconfig
+.kube/
+
+# ============ 敏感信息 ============
+.env
+.env.local
+*.pem
+*.key
+secrets/local-*.yaml
+
+# ============ 日志 ============
+*.log
+logs/
+services/logs/
