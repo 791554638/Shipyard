@@ -1,0 +1,59 @@
+name: Lint
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  yaml-lint:
+    name: YAML syntax & style
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install yamllint
+        run: pip install --quiet yamllint==1.35.1
+
+      - name: Run yamllint
+        run: |
+          # 放宽：行长度不限、文档起始 --- 不强制（避免误报）
+          yamllint -d "{extends: default, rules: {line-length: disable, document-start: disable, comments-indentation: disable}}" \
+            k8s/ services/ docker/ .github/ docker-compose.yml
+
+  shell-lint:
+    name: Shell script lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck
+        run: |
+          find scripts -type f -name "*.sh" -exec shellcheck --severity=warning {} +
+
+  dockerfile-lint:
+    name: Dockerfile lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: hadolint
+        uses: hadolint/hadolint@v2.12.1-beta
+        with:
+          failure-threshold: warning
+          files: |
+            docker/app/Dockerfile
+            docker/nginx/Dockerfile
