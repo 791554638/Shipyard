@@ -35,6 +35,7 @@ shipyard/                    ← 项目根目录（repo 名与目录名可不同
 ├── README.md                 ← 本文件
 ├── docker-compose.yml        ← 本地一键起全部依赖
 ├── .gitignore
+├── .env.example              ← 环境变量模板（复制为 .env 自定义密码）
 ├── .hadolint.yaml            ← Dockerfile lint 规则（忽略项）
 │
 ├── .github/workflows/        ← CI 流水线（push/PR 自动触发）
@@ -134,8 +135,7 @@ docker compose down
 | MySQL | localhost:3306 | `root` / `cfa` | `rootpass` / `cfapass` |
 | Logstash | localhost:5044（tcp 直推） | 无需认证 | - |
 
-> 改 ES 密码：`export ELASTIC_PASSWORD="xxx"` 后 `docker compose up -d`；
-> 或 API：`PUT /_security/user/elastic/_password`（改后同步 Kibana/Logstash 环境变量）。
+> **自定义密码（v0.3.0 起）**：`cp .env.example .env` 后修改，`docker compose up -d` 自动生效（`.env` 已被 gitignore，绝不提交）。改 ES 密码也可 API 方式：`PUT /_security/user/elastic/_password`。完整密钥管理方案见 [docs/secrets-management.md](docs/secrets-management.md)。
 
 ### 5.3 验证日志链路
 

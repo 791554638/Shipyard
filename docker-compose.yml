@@ -16,10 +16,10 @@ services:
     container_name: cfa-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
       MYSQL_DATABASE: cfa
       MYSQL_USER: cfa
-      MYSQL_PASSWORD: cfapass
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-cfapass}
     ports:
       - "3306:3306"
     volumes:
@@ -27,7 +27,7 @@ services:
       - ./services/mysql/conf/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpass"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-rootpass}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -148,7 +148,7 @@ services:
       MYSQL_PORT: 3306
       MYSQL_DB: cfa
       MYSQL_USER: cfa
-      MYSQL_PASSWORD: cfapass
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-cfapass}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       LOGSTASH_HOST: logstash
