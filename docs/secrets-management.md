@@ -71,6 +71,8 @@
 
 ## 5. v0.3.0 — 本地 `.env` 参数化
 
+> **状态：✅ 已实施（2026-09-18）** —— 验收四项全部通过：无 `.env` 时 `docker compose config` 与改造前逐字节一致；`.env` 覆盖全部 7 处密码引用（含 MySQL healthcheck）；`.env` 被 gitignore 拦截；CI 全绿。
+
 ### 范围
 - docker-compose.yml **全部**密码参数化（补齐 MySQL 硬编码）
 - 引入 `.env.example` 模板 + `.env` 本地覆盖机制
