@@ -1,0 +1,13 @@
+---
+# hadolint 配置：https://github.com/hadolint/hadolint
+# CI 中由 .github/workflows/lint.yml 的 dockerfile-lint job 使用
+
+ignored:
+  # 不 pin apk 包版本：alpine 包版本随基础镜像滚动，
+  # 硬编码版本号会在基础镜像更新后导致构建失败，得不偿失
+  - DL3018
+  # 允许多个连续 RUN：本项目优先保证可读性（每条 RUN 一个职责）
+  - DL3059
+
+# 严格度：warning 及以上才失败（info 仅提示）
+failure-threshold: warning

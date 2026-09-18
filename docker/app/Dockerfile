@@ -22,8 +22,9 @@ RUN mkdir -p /var/www/html && chown -R www-data:www-data /var/www/html
 WORKDIR /var/www/html
 
 # 健康检查（仅 docker-compose 使用，K8s 用 readinessProbe）
+# 用 busybox 自带的 pgrep 检测 php-fpm 主进程（alpine 默认已含）
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD php-fpm-healthcheck || exit 1
+    CMD pgrep -x php-fpm > /dev/null || exit 1
 
 # 暴露 FPM 端口
 EXPOSE 9000

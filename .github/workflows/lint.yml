@@ -1,6 +1,8 @@
+---
 name: Lint
 
-on:
+# 注意：YAML 1.1 中裸写 on 会被解析为布尔 true，加引号消除 yamllint truthy 警告
+"on":
   push:
     branches: [dev, main]
   pull_request:
@@ -21,11 +23,11 @@ jobs:
           python-version: '3.11'
 
       - name: Install yamllint
-        run: pip install --quiet yamllint==1.35.1
+        run: pip install --quiet yamllint==1.37.1
 
       - name: Run yamllint
         run: |
-          # 放宽：行长度不限、文档起始 --- 不强制（避免误报）
+          # 放宽：不限行长度、不强制文档起始 ---（避免噪音）
           yamllint -d "{extends: default, rules: {line-length: disable, document-start: disable, comments-indentation: disable}}" \
             k8s/ services/ docker/ .github/ docker-compose.yml
 
@@ -37,11 +39,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install shellcheck
-        run: sudo apt-get update -qq && sudo apt-get install -y shellcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
 
       - name: Run shellcheck
-        run: |
-          find scripts -type f -name "*.sh" -exec shellcheck --severity=warning {} +
+        run: find scripts -type f -name "*.sh" -exec shellcheck --severity=warning --exclude=SC1091 {} +
 
   dockerfile-lint:
     name: Dockerfile lint
@@ -50,10 +53,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: hadolint
-        uses: hadolint/hadolint@v2.12.1-beta
-        with:
-          failure-threshold: warning
-          files: |
-            docker/app/Dockerfile
-            docker/nginx/Dockerfile
+      - name: Install hadolint
+        run: |
+          wget -q -O /usr/local/bin/hadolint \
+            https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+          chmod +x /usr/local/bin/hadolint
+          hadolint --version
+
+      - name: Run hadolint
+        run: hadolint docker/app/Dockerfile docker/nginx/Dockerfile
