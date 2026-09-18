@@ -79,7 +79,8 @@ shipyard/                    ← 项目根目录（repo 名与目录名可不同
 │
 ├── docs/
 │   ├── architecture.md       ← 架构图与组件说明
-│   └── deploy.md             ← 详细部署步骤
+│   ├── deploy.md             ← 详细部署步骤
+│   └── secrets-management.md ← 密钥/参数管理方案（v0.3.0→v0.5.0 路线图）
 │
 └── scripts/
     ├── init-es-indices.sh    ← ES 索引初始化（IK 分词）
@@ -217,6 +218,8 @@ kubectl apply -f k8s/ingress.yaml
 * 开启 ES 的 TLS（`xpack.security.http.ssl.enabled: true`）
 * 为 Kibana / Logstash 创建最小权限专用账户，不用 elastic 超级用户
 * 通过 CI 注入密码，绝不提交到 git
+
+> 📋 密码从"明文学习模式"到"CI 注入生产模式"的完整演进方案（v0.3.0 → v0.5.0 路线图）见 **[docs/secrets-management.md](docs/secrets-management.md)**。
 
 ## 9. 贡献指南
 
