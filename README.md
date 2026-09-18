@@ -219,7 +219,7 @@ kubectl apply -f k8s/ingress.yaml
 * 为 Kibana / Logstash 创建最小权限专用账户，不用 elastic 超级用户
 * 通过 CI 注入密码，绝不提交到 git
 
-> 📋 密码从"明文学习模式"到"CI 注入生产模式"的完整演进方案（v0.3.0 → v0.5.0 路线图）见 **[docs/secrets-management.md](docs/secrets-management.md)**。
+> 📋 密码从"明文学习模式"到"CI 注入生产模式"的完整演进方案（v0.3.0 → v0.5.0 路线图）见 **[docs/secrets-management.md](docs/secrets-management.md)**。本地 `.env` 覆盖（v0.3.0）与 CI Secrets 渲染（v0.4.0）已实施。
 
 ## 9. 贡献指南
 
@@ -282,7 +282,7 @@ test:     测试
 
 ### 9.5 CI 流水线
 
-定义在 `.github/workflows/lint.yml`，**push（dev/main）与 PR 时自动触发**，共五项：
+定义在 `.github/workflows/lint.yml`，**push（dev/main）与 PR 时自动触发**，共七项：
 
 | Job | 工具 | 校验内容 |
 |---|---|---|
@@ -291,6 +291,8 @@ test:     测试
 | Dockerfile lint | `hadolint` | `docker/app/Dockerfile`、`docker/nginx/Dockerfile` |
 | Docker build (no push) | `docker build` | 两个镜像构建验证，防止 Dockerfile 改坏 |
 | K8s manifest schema | `kubeconform` | `k8s/` 全部 30 个资源，strict 模式，锁定 K8s 1.29 schema |
+| Secret template render | `envsubst` + `kubeconform` | `k8s/secret.yaml.tpl` 渲染 + 校验，密码全程不落盘不打印 |
+| Secret leak guard | `git` + `diff` | `.env` 未被跟踪 / 模板无明文密码 / 明文版与模板字段一致 |
 
 > **为什么不用 `kubectl apply --dry-run=client`？** 新版 kubectl 在 client dry-run 时仍会尝试连接 API server 下载 OpenAPI schema，CI 无集群环境会失败；`--validate=false` 则几乎不校验。`kubeconform` 是 CI 离线 schema 校验的标准做法。
 

@@ -101,3 +101,84 @@ jobs:
 
       - name: Validate manifests against K8s schema
         run: kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.29.0 k8s/
+
+  # ============================================================
+  # v0.4.0 CI 参数注入：Secret 模板渲染 + 校验（dry-run）
+  # 原理：GitHub Secrets 以 env 进入 job → envsubst 渲染到内存
+  #       → kubeconform stdin 校验。密码全程不落盘、不打印。
+  # 前置：仓库 Settings → Secrets → Actions 配置
+  #       MYSQL_ROOT_PASSWORD / MYSQL_PASSWORD / ELASTIC_PASSWORD
+  # ============================================================
+  secret-render:
+    name: Secret template render (dry-run)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          sudo install -m 0755 kubeconform /usr/local/bin/kubeconform
+
+      - name: Render & validate secret template
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          ELASTIC_PASSWORD: ${{ secrets.ELASTIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # 1. 空值检查：Secret 未配置/名字写错 → 立即失败
+          #    （只报变量名，绝不打印值）
+          missing=0
+          for var in MYSQL_ROOT_PASSWORD MYSQL_PASSWORD ELASTIC_PASSWORD; do
+            if [ -z "$(printenv "$var")" ]; then
+              echo "::error::Secret '$var' 为空 —— 未配置或名字不匹配（Settings → Secrets → Actions）"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+
+          # 2. 渲染到内存变量（不写文件）
+          RENDERED=$(envsubst < k8s/secret.yaml.tpl)
+
+          # 3. 兜底检查：占位符必须全部被替换
+          if printf '%s' "$RENDERED" | grep -qE '\$\{[A-Z_]+\}'; then
+            echo "::error::占位符未被替换，检查模板与 secrets 名称"
+            exit 1
+          fi
+
+          # 4. 渲染结果必须是合法 K8s manifest（stdin 校验，不落盘）
+          printf '%s' "$RENDERED" | kubeconform -strict -summary -ignore-missing-schemas -
+          echo "✅ 模板渲染 + 校验通过（密码未落盘、未打印）"
+
+  # ============================================================
+  # v0.4.0 防泄漏守卫：
+  #   1) .env 不得被 git 跟踪
+  #   2) 模板只允许占位符，不得含学习默认值
+  #   3) 明文版 secret.yaml 与模板字段名一致（防漂移）
+  # ============================================================
+  secret-leak-guard:
+    name: Secret leak guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Guard against secret leaks
+        run: |
+          # 1) .env 不应出现在 git 跟踪列表
+          if git ls-files --error-unmatch .env 2>/dev/null; then
+            echo "::error::.env 被提交了！请 git rm --cached .env"
+            exit 1
+          fi
+          # 2) 模板不得包含明文默认值
+          if grep -qE 'rootpass|cfapass|Cfa@' k8s/secret.yaml.tpl; then
+            echo "::error::模板包含明文密码默认值，只允许 \${VAR} 占位符"
+            exit 1
+          fi
+          # 3) 明文版与模板的 stringData 字段必须一致
+          diff <(grep -oE '^  [A-Z_]+:' k8s/secret.yaml | tr -d ' :') \
+               <(grep -oE '^  [A-Z_]+:' k8s/secret.yaml.tpl | tr -d ' :') \
+            || { echo "::error::secret.yaml 与 secret.yaml.tpl 字段漂移，需同步修改"; exit 1; }
+          echo "✅ 无泄漏：.env 未跟踪 / 模板无明文 / 两版字段一致"
