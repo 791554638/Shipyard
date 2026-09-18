@@ -39,7 +39,7 @@ shipyard/                    ← 项目根目录（repo 名与目录名可不同
 ├── .hadolint.yaml            ← Dockerfile lint 规则（忽略项）
 │
 ├── .github/workflows/        ← CI 流水线（push/PR 自动触发）
-│   └── lint.yml              ← 五项校验，见「9.5 CI 流水线」
+│   └── lint.yml              ← 七项校验，见「9.5 CI 流水线」
 │
 ├── app/                      ← PHP 业务代码
 │   ├── public/index.php      ← 入口（通过 Nginx + PHP-FPM）
@@ -65,7 +65,9 @@ shipyard/                    ← 项目根目录（repo 名与目录名可不同
 │
 ├── k8s/                      ← K8s 部署清单
 │   ├── namespace.yaml
-│   ├── secret.yaml           ← 密码（学习用明文，生产换 Sealed Secrets/Vault）
+│   ├── secret.yaml           ← 密码（学习用明文；生产用 sealed-secret.yaml）
+│   ├── secret.yaml.tpl       ← CI 渲染模板（${VAR} 占位符，envsubst 渲染）
+│   ├── sealed-secret.yaml    ← 生产模式密文（v0.5.0 生成，可安全提交）
 │   ├── config/               ← ConfigMap：所有组件的配置
 │   ├── mysql/                ← StatefulSet + Service
 │   ├── redis/                ← StatefulSet + Service
@@ -81,12 +83,15 @@ shipyard/                    ← 项目根目录（repo 名与目录名可不同
 ├── docs/
 │   ├── architecture.md       ← 架构图与组件说明
 │   ├── deploy.md             ← 详细部署步骤
-│   └── secrets-management.md ← 密钥/参数管理方案（v0.3.0→v0.5.0 路线图）
+│   ├── secrets-management.md ← 密钥/参数管理方案（v0.3.0→v0.5.0 路线图）
+│   └── sealed-secrets.md     ← Sealed Secrets 使用指南（v0.5.0）
 │
 └── scripts/
-    ├── init-es-indices.sh    ← ES 索引初始化（IK 分词）
-    ├── deploy.sh             ← K8s 一键部署
-    └── cleanup-old-dirs.sh   ← 清理历史遗留空目录
+    ├── init-es-indices.sh          ← ES 索引初始化（IK 分词）
+    ├── deploy.sh                   ← K8s 一键部署（--mode=learn|prod）
+    ├── install-sealed-secrets.sh   ← 安装 Sealed Secrets controller（v0.5.0）
+    ├── seal-secret.sh              ← 一键加密 Secret → SealedSecret（v0.5.0）
+    └── cleanup-old-dirs.sh         ← 清理历史遗留空目录
 ```
 
 ## 4. 技术栈
@@ -219,7 +224,7 @@ kubectl apply -f k8s/ingress.yaml
 * 为 Kibana / Logstash 创建最小权限专用账户，不用 elastic 超级用户
 * 通过 CI 注入密码，绝不提交到 git
 
-> 📋 密码从"明文学习模式"到"CI 注入生产模式"的完整演进方案（v0.3.0 → v0.5.0 路线图）见 **[docs/secrets-management.md](docs/secrets-management.md)**。本地 `.env` 覆盖（v0.3.0）与 CI Secrets 渲染（v0.4.0）已实施。
+> 📋 密码从"明文学习模式"到"CI 注入生产模式"再到"K8s 原生密钥管理"的完整演进方案（v0.3.0 → v0.5.0 路线图）见 **[docs/secrets-management.md](docs/secrets-management.md)**。三阶段已全部实施：本地 `.env`（v0.3.0）/ CI Secrets 渲染（v0.4.0）/ SealedSecrets（v0.5.0）。
 
 ## 9. 贡献指南
 

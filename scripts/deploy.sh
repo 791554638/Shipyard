@@ -9,23 +9,32 @@
 #      docker build -t cfa/nginx:1.25 -f docker/nginx/Dockerfile .
 #
 # 用法：
-#   ./scripts/deploy.sh                  # 部署到当前 kubectl context
-#   ./scripts/deploy.sh --skip-build     # 跳过镜像构建（CI/CD 场景）
-#   ./scripts/deploy.sh --skip-ingress   # 跳过 Ingress（裸集群无 Controller）
+#   ./scripts/deploy.sh                          # 默认 learn 模式
+#   ./scripts/deploy.sh --mode=prod              # 生产模式（apply SealedSecret）
+#   ./scripts/deploy.sh --skip-build             # 跳过镜像构建（CI/CD 场景）
+#   ./scripts/deploy.sh --skip-ingress           # 跳过 Ingress（裸集群无 Controller）
+#
+# 模式说明：
+#   learn（默认）：apply k8s/secret.yaml（明文，学习用，clone 即跑）
+#   prod         ：apply k8s/sealed-secret.yaml（密文，controller 自动转 Secret）
+#                 需先运行 ./scripts/seal-secret.sh 生成
 
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "${PROJECT_ROOT}"
 
+MODE="learn"
 SKIP_BUILD=0
 SKIP_INGRESS=0
 for arg in "$@"; do
     case "${arg}" in
+        --mode=learn)   MODE="learn" ;;
+        --mode=prod)    MODE="prod" ;;
         --skip-build)   SKIP_BUILD=1 ;;
         --skip-ingress) SKIP_INGRESS=1 ;;
         -h|--help)
-            sed -n '2,20p' "$0"
+            sed -n '2,22p' "$0"
             exit 0
             ;;
     esac
@@ -44,6 +53,20 @@ fi
 
 info "集群信息："
 kubectl cluster-info
+
+# prod 模式前置检查（早失败，避免白白构建镜像）
+if [[ "${MODE}" == "prod" ]]; then
+    if [[ ! -f k8s/sealed-secret.yaml ]]; then
+        echo "错误: --mode=prod 但 k8s/sealed-secret.yaml 不存在"
+        echo "      请先运行：./scripts/seal-secret.sh 生成密文"
+        exit 1
+    fi
+    if ! kubectl get crd sealedsecrets.bitnami.com >/dev/null 2>&1; then
+        echo "错误: 集群未安装 Sealed Secrets controller"
+        echo "      请先运行：./scripts/install-sealed-secrets.sh"
+        exit 1
+    fi
+fi
 
 # 构建镜像
 if [[ ${SKIP_BUILD} -eq 0 ]]; then
@@ -65,7 +88,16 @@ fi
 
 info "应用 Namespace / Secret / ConfigMap"
 kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/secret.yaml
+
+# 双模式：learn 用明文 secret.yaml，prod 用密文 sealed-secret.yaml
+if [[ "${MODE}" == "prod" ]]; then
+    info "[mode=prod] 应用 SealedSecret（controller 将自动解密为 Secret）"
+    kubectl apply -f k8s/sealed-secret.yaml
+else
+    info "[mode=learn] 应用明文 Secret（仅本地学习）"
+    kubectl apply -f k8s/secret.yaml
+fi
+
 kubectl apply -f k8s/config/
 
 info "应用有状态服务（按 MySQL → Redis → ES 顺序）"
