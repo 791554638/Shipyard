@@ -115,6 +115,8 @@
 
 ## 6. v0.4.0 — CI 参数注入（本方案核心）
 
+> **状态：✅ 已实施（2026-09-18）** —— CI #17 七个 job 全绿。实施时补强：新增**空值前置检查**（原方案盲点——Secret 未配置时 envsubst 将占位符替换为空串，占位符残留检查会失效导致假绿）。验收：渲染产物合法、日志无明文（GitHub mask）、leak-guard 三条全过。
+
 ### 范围
 - K8s Secret 模板化 + GitHub Actions Secrets 渲染流水线
 
@@ -264,8 +266,8 @@ kubeconform 校验 → 成功即丢弃
 
 ## 9. 里程碑检查清单
 
-- [ ] **v0.3.0**：`.env.example` / compose 全参数化 / gitignore / 验收 4 项
-- [ ] **v0.4.0**：`.tpl` 模板 / 3 个 GitHub Secrets / 2 个新 CI job / README 同步
+- [x] **v0.3.0**：`.env.example` / compose 全参数化 / gitignore / 验收 4 项（tag `v0.3.0`）
+- [x] **v0.4.0**：`.tpl` 模板 / 3 个 GitHub Secrets / 2 个新 CI job / README 同步（tag `v0.4.0`）
 - [ ] **v0.5.0**：Sealed Secrets controller / seal-secret.sh / deploy.sh 双模式
 - [ ] 每版本：dev 开发 → CI 全绿 → PR → main → tag
 
