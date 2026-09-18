@@ -93,3 +93,30 @@ K8s 内 DNS 解析需要时间。Pod 启动后等几秒；也可以 exec 进 Pod
 ### Ingress 不通
 * `kubectl get ingress -n cfa` 看 ADDRESS 是否分配
 * 本地集群（minikube/kind）需要 `minikube tunnel` 或端口转发
+
+## 7. CI 中的 manifest 校验
+
+每次 push/PR，GitHub Actions 会用 [kubeconform](https://github.com/yannh/kubeconform) 对 `k8s/` 全部 manifest 做**离线 schema 校验**（strict 模式，锁定 K8s 1.29 schema），不依赖真实集群：
+
+```yaml
+# .github/workflows/lint.yml（节选）
+- name: Validate manifests against K8s schema
+  run: kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.29.0 k8s/
+```
+
+> 注意：升级 K8s 目标版本时，记得同步改 `-kubernetes-version` 参数。
+
+本地复现同样的校验（无需安装 kubectl）：
+
+```bash
+docker run --rm -v "$(pwd)/k8s:/k8s:ro" ghcr.io/yannh/kubeconform:latest \
+  -strict -ignore-missing-schemas /k8s
+```
+
+常见报错：
+
+| 报错 | 原因 |
+|---|---|
+| `could not find schema for X` | apiVersion 拼错或版本不存在（如还在用 `extensions/v1beta1`） |
+| `missing property "xxx"` | 字段名拼写错误或位置不对（strict 模式） |
+| `forbidden property "xxx"` | 该资源版本已废弃此字段（如 1.25+ 移除的字段） |

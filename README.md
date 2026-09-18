@@ -35,6 +35,10 @@ shipyard/                    ← 项目根目录（repo 名与目录名可不同
 ├── README.md                 ← 本文件
 ├── docker-compose.yml        ← 本地一键起全部依赖
 ├── .gitignore
+├── .hadolint.yaml            ← Dockerfile lint 规则（忽略项）
+│
+├── .github/workflows/        ← CI 流水线（push/PR 自动触发）
+│   └── lint.yml              ← 五项校验，见「9.5 CI 流水线」
 │
 ├── app/                      ← PHP 业务代码
 │   ├── public/index.php      ← 入口（通过 Nginx + PHP-FPM）
@@ -224,6 +228,8 @@ kubectl apply -f k8s/ingress.yaml
 | `dev` | 日常开发集成 | ✅ 直接推送 |
 | `feature/*` | 单个功能/修复，用完即删 | ✅ 直接推送 |
 
+> main 的 PR 限制由 GitHub **分支保护规则**（Branch protection rules）强制执行：仓库 Settings → Branches → 对 `main` 启用 *Require a pull request before merging*。启用后任何人都无法直推 main（包括管理员，勾选 *Do not allow bypassing*）。
+
 ### 9.2 工作流
 
 ```bash
@@ -236,7 +242,7 @@ git commit -m "feat: 描述你的改动"
 git push -u origin feature/你的功能名
 
 # 3. 在 GitHub 上提 PR：feature/你的功能名 → dev
-#    PR 必须通过 GitHub Actions Lint 检查 ✅
+#    PR 必须通过 CI 五项检查（见 9.5），全绿才能合并 ✅
 
 # 4. PR 合并后删除功能分支
 git branch -d feature/你的功能名
@@ -263,11 +269,41 @@ test:     测试
 
 ### 9.4 PR 检查清单
 
-- [ ] 所有 YAML 文件通过 `yamllint`（GitHub Actions 自动跑）
-- [ ] shell 脚本通过 `shellcheck`
+- [ ] 所有 YAML 文件通过 `yamllint`（CI 自动跑）
+- [ ] shell 脚本通过 `shellcheck`（CI 自动跑）
+- [ ] Dockerfile 通过 `hadolint`（CI 自动跑）
+- [ ] K8s manifest 通过 `kubeconform` schema 校验（CI 自动跑）
 - [ ] README 与代码同步（新增组件时同时更新目录结构、技术栈表）
 - [ ] 涉及 K8s manifest 时同步更新 `docs/deploy.md`
 - [ ] 不提交明文密码到 git（学习用密码例外，但生产环境务必替换）
+
+### 9.5 CI 流水线
+
+定义在 `.github/workflows/lint.yml`，**push（dev/main）与 PR 时自动触发**，共五项：
+
+| Job | 工具 | 校验内容 |
+|---|---|---|
+| YAML syntax & style | `yamllint` | `k8s/`、`services/`、`docker/`、`.github/`、`docker-compose.yml` |
+| Shell script lint | `shellcheck` | `scripts/*.sh`（warning 级以上） |
+| Dockerfile lint | `hadolint` | `docker/app/Dockerfile`、`docker/nginx/Dockerfile` |
+| Docker build (no push) | `docker build` | 两个镜像构建验证，防止 Dockerfile 改坏 |
+| K8s manifest schema | `kubeconform` | `k8s/` 全部 30 个资源，strict 模式，锁定 K8s 1.29 schema |
+
+> **为什么不用 `kubectl apply --dry-run=client`？** 新版 kubectl 在 client dry-run 时仍会尝试连接 API server 下载 OpenAPI schema，CI 无集群环境会失败；`--validate=false` 则几乎不校验。`kubeconform` 是 CI 离线 schema 校验的标准做法。
+
+本地跑同样的校验（提交前自检）：
+
+```bash
+# YAML
+python3 -m pip install yamllint && yamllint -d "{extends: default, rules: {line-length: disable, document-start: disable, comments-indentation: disable}}" k8s/ services/ docker/ .github/ docker-compose.yml
+
+# K8s manifest（无需本地装 kubectl）
+docker run --rm -v "$(pwd)/k8s:/k8s:ro" ghcr.io/yannh/kubeconform:latest -strict -ignore-missing-schemas /k8s
+
+# Docker 镜像构建
+docker build -t cfa/php:ci -f docker/app/Dockerfile .
+docker build -t cfa/nginx:ci docker/nginx
+```
 
 ## 10. 版本与发布
 
