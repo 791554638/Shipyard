@@ -81,22 +81,23 @@ jobs:
         run: docker build -t cfa/nginx:ci docker/nginx
 
   # ============================================================
-  # CI 增强：K8s manifest 客户端 dry-run 校验
-  # 不连接真实集群，仅做 schema/字段合法性检查
+  # CI 增强：K8s manifest schema 校验
+  # 注：kubectl apply --dry-run=client 在无 API server 时仍会尝试
+  # 下载 OpenAPI schema 导致失败（--validate=false 则几乎不校验），
+  # 故改用 kubeconform 做离线 schema 校验（CI 界标准做法）
   # ============================================================
   k8s-dry-run:
-    name: K8s manifest dry-run
+    name: K8s manifest schema validation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install kubectl
+      - name: Install kubeconform
         run: |
-          KUBE_VER=$(curl -sL https://dl.k8s.io/release/stable.txt)
-          curl -sLO "https://dl.k8s.io/release/${KUBE_VER}/bin/linux/amd64/kubectl"
-          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-          kubectl version --client
+          curl -sL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          sudo install -m 0755 kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
 
-      - name: Validate manifests (client dry-run)
-        run: kubectl apply -f k8s/ -R --dry-run=client
+      - name: Validate manifests against K8s schema
+        run: kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.29.0 k8s/
