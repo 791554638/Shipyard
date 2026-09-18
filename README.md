@@ -34,6 +34,8 @@ Filebeat ──:5045 (beats)──────┴──→ Logstash ──http+a
 shipyard/                    ← 项目根目录（repo 名与目录名可不同）
 ├── README.md                 ← 本文件
 ├── docker-compose.yml        ← 本地一键起全部依赖
+├── Makefile                  ← 内循环入口：make init / dev / ui / logs（v0.6.0）
+├── kind-config.yaml          ← kind 集群配置（本地 registry mirror，v0.6.0）
 ├── .gitignore
 ├── .env.example              ← 环境变量模板（复制为 .env 自定义密码）
 ├── .hadolint.yaml            ← Dockerfile lint 规则（忽略项）
@@ -47,7 +49,7 @@ shipyard/                    ← 项目根目录（repo 名与目录名可不同
 │   └── composer.json
 │
 ├── docker/                   ← 自定义镜像构建
-│   ├── app/Dockerfile        ← PHP 应用镜像
+│   ├── app/Dockerfile        ← PHP 应用镜像（代码进镜像 + ARG 参数化，v0.6.0）
 │   └── nginx/Dockerfile      ← Nginx 镜像（含 vhost 配置）
 │
 ├── services/                 ← 各组件的原始配置，与 K8s / docker-compose 共享
@@ -64,9 +66,9 @@ shipyard/                    ← 项目根目录（repo 名与目录名可不同
 │   └── logs/                      ← 运行时日志（gitignore，filebeat 采集源）
 │
 ├── k8s/                      ← K8s 部署清单
+│   ├── kustomization.yaml    ← Kustomize 入口（镜像 tag 由 dev-deploy.sh 注入，v0.6.0）
 │   ├── namespace.yaml
-│   ├── secret.yaml           ← 密码（学习用明文；生产用 sealed-secret.yaml）
-│   ├── secret.yaml.tpl       ← CI 渲染模板（${VAR} 占位符，envsubst 渲染）
+│   ├── secret.yaml.tpl       ← Secret 渲染模板（${VAR} 占位符，.env/CI 注入，明文不进 git）
 │   ├── sealed-secret.yaml    ← 生产模式密文（v0.5.0 生成，可安全提交）
 │   ├── config/               ← ConfigMap：所有组件的配置
 │   ├── mysql/                ← StatefulSet + Service
@@ -82,13 +84,16 @@ shipyard/                    ← 项目根目录（repo 名与目录名可不同
 │
 ├── docs/
 │   ├── architecture.md       ← 架构图与组件说明
-│   ├── deploy.md             ← 详细部署步骤
+│   ├── deploy.md             ← 详细部署步骤（含 v0.6.0 内循环）
+│   ├── roadmap.md            ← 后续版本路线图（v0.6.0→v1.3.0）
 │   ├── secrets-management.md ← 密钥/参数管理方案（v0.3.0→v0.5.0 路线图）
 │   └── sealed-secrets.md     ← Sealed Secrets 使用指南（v0.5.0）
 │
 └── scripts/
     ├── init-es-indices.sh          ← ES 索引初始化（IK 分词）
     ├── deploy.sh                   ← K8s 一键部署（--mode=learn|prod）
+    ├── dev-cluster.sh              ← kind 集群 + 本地 registry 生命周期（v0.6.0）
+    ├── dev-deploy.sh               ← 内循环核心：build→push→apply→verify（v0.6.0）
     ├── install-sealed-secrets.sh   ← 安装 Sealed Secrets controller（v0.5.0）
     ├── seal-secret.sh              ← 一键加密 Secret → SealedSecret（v0.5.0）
     └── cleanup-old-dirs.sh         ← 清理历史遗留空目录
@@ -114,6 +119,9 @@ shipyard/                    ← 项目根目录（repo 名与目录名可不同
 ### 5.1 本地（docker-compose）
 
 ```bash
+# 首次使用：创建本地密码文件（学习默认值见 .env.example）
+cp .env.example .env
+
 # 构建自定义镜像（PHP 应用 + Nginx）
 docker compose build
 
@@ -131,22 +139,27 @@ open http://localhost:5601      # Kibana（登录见下表）
 docker compose down
 ```
 
-### 5.2 默认账号密码（⚠️ 仅本地学习用）
+### 5.2 账号密码（⚠️ 仅本地学习用）
+
+密码的**唯一事实来源**是 `.env`（从 `.env.example` 复制；compose 与 K8s 部署脚本均从它注入，仓库代码零明文）：
 
 | 服务 | 地址 | 账号 | 密码 |
 |---|---|---|---|
-| Kibana | http://localhost:5601 | `elastic` | `Cfa@Elastic2026` |
-| ES API | http://localhost:9200 | `elastic` | `Cfa@Elastic2026` |
-| MySQL | localhost:3306 | `root` / `cfa` | `rootpass` / `cfapass` |
+| Kibana | http://localhost:5601 | `elastic` | `$ELASTIC_PASSWORD` |
+| ES API | http://localhost:9200 | `elastic` | `$ELASTIC_PASSWORD` |
+| MySQL | localhost:3306 | `root` / `cfa` | `$MYSQL_ROOT_PASSWORD` / `$MYSQL_PASSWORD` |
 | Logstash | localhost:5044（tcp 直推） | 无需认证 | - |
 
-> **自定义密码（v0.3.0 起）**：`cp .env.example .env` 后修改，`docker compose up -d` 自动生效（`.env` 已被 gitignore，绝不提交）。改 ES 密码也可 API 方式：`PUT /_security/user/elastic/_password`。完整密钥管理方案见 [docs/secrets-management.md](docs/secrets-management.md)。
+> **查看/修改密码**：直接编辑 `.env`（已被 gitignore，绝不提交），`docker compose up -d` 自动生效。改 ES 密码也可 API 方式：`PUT /_security/user/elastic/_password`。完整密钥管理方案见 [docs/secrets-management.md](docs/secrets-management.md)。
 
 ### 5.3 验证日志链路
 
 ```bash
+# 导出密码供下方命令使用（值来自 .env）
+export ELASTIC_PASSWORD="$(grep '^ELASTIC_PASSWORD=' .env | cut -d= -f2)"
+
 # 1. ES 插件与分词
-curl -u elastic:Cfa@Elastic2026 "localhost:9200/_cat/plugins?v"
+curl -u "elastic:$ELASTIC_PASSWORD" "localhost:9200/_cat/plugins?v"
 
 # 2. Logstash 处理统计
 curl "localhost:9600/_node/stats/pipelines?pretty"
@@ -160,7 +173,16 @@ echo '{"type":"php-error","level":"ERROR","message":"hello elk","timestamp":"'$(
 
 ### 5.4 K8s 集群
 
-> 前置：已安装 kubectl 并配置好集群（minikube / kind / 任意云厂商均可）
+**推荐：内循环（v0.6.0，自建 kind 集群 + 本地 registry）**
+
+```bash
+brew install kind     # 一次性
+make init             # 建集群 + registry + 全量部署
+make dev              # 日常迭代：改代码后一条命令上集群
+make ui               # 端口转发访问 http://localhost:8080
+```
+
+**通用：deploy.sh（任意集群，minikube / kind / 云厂商均可）**
 
 ```bash
 # 一键部署
@@ -168,7 +190,10 @@ echo '{"type":"php-error","level":"ERROR","message":"hello elk","timestamp":"'$(
 
 # 或分步执行
 kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/secret.yaml
+
+# Secret：从 .env 渲染注入（deploy.sh 已内置此步骤，明文不进 git）
+set -a; source .env; set +a
+envsubst < k8s/secret.yaml.tpl | kubectl apply -f -
 kubectl apply -f k8s/config/
 kubectl apply -f k8s/mysql/
 kubectl apply -f k8s/redis/
@@ -187,9 +212,9 @@ kubectl apply -f k8s/ingress.yaml
 > K8s 部署前需先给 `kibana_system` 用户设置密码（一次性）：
 > ```bash
 > kubectl -n cfa exec -it statefulset/elasticsearch -- \
->   curl -u elastic:$ELASTIC_PASSWORD -X PUT \
+>   curl -u "elastic:$ELASTIC_PASSWORD" -X PUT \
 >   "localhost:9200/_security/user/kibana_system/_password" \
->   -H "Content-Type: application/json" -d '{"password":"Cfa@Elastic2026"}'
+>   -H "Content-Type: application/json" -d "{\"password\":\"$ELASTIC_PASSWORD\"}"
 > ```
 
 ## 6. 学习路径建议
@@ -198,7 +223,7 @@ kubectl apply -f k8s/ingress.yaml
 
 1. **本地 docker-compose** —— 看 `docker-compose.yml`，理解服务如何编排、健康检查与启动顺序
 2. **从无状态开始** —— `k8s/nginx/` + `k8s/php/`：Deployment + Service + ConfigMap
-3. **ConfigMap 与 Secret** —— `k8s/config/` + `k8s/secret.yaml`：配置与密钥分离
+3. **ConfigMap 与 Secret** —— `k8s/config/` + `k8s/secret.yaml.tpl`：配置与密钥分离（模板 + 注入）
 4. **有状态服务** —— `k8s/mysql/` + `k8s/redis/`：StatefulSet + PVC + headless Service
 5. **复杂初始化** —— `k8s/elasticsearch/`：initContainer + 插件安装
 6. **日志采集** —— `k8s/logstash/` + `k8s/filebeat/`：Deployment + DaemonSet + RBAC + NodePort
@@ -213,18 +238,18 @@ kubectl apply -f k8s/ingress.yaml
 * **PHP 连不上 MySQL？** K8s 中用 service 名 `mysql`（同 namespace），不是 `localhost`
 * **Logstash 崩溃循环 "read-only file system"？** `logstash.yml` 不能只读挂载——官方镜像 entrypoint 要把环境变量写回该文件，配置一律走环境变量
 * **Kibana 起不来 "username elastic is forbidden"？** 8.x 禁止用 elastic 超级用户做内部连接，必须用 `kibana_system`（见 5.4 的密码设置命令）
-* **Navicat 连 MySQL 报 "caching_sha2_password cannot be loaded"？** Navicat 版本太老（<12.1），执行 `ALTER USER 'cfa'@'%' IDENTIFIED WITH mysql_native_password BY 'cfapass';`
+* **Navicat 连 MySQL 报 "caching_sha2_password cannot be loaded"？** Navicat 版本太老（<12.1），执行 `ALTER USER 'cfa'@'%' IDENTIFIED WITH mysql_native_password BY '<你的 MYSQL_PASSWORD>';`
 
 ## 8. 安全声明
 
-本仓库**有意**包含学习用的明文密码（`docker-compose.yml` / `k8s/secret.yaml`），目的是降低初学者门槛。**生产环境请务必**：
+本仓库**不包含任何明文密码**：学习默认值仅存于 `.env.example`（模板），实际值全部通过注入到达运行时——本地由 `.env`（gitignore）渲染，CI 由 GitHub Secrets 渲染模板，K8s 生产模式由 Sealed Secrets 解密。**生产环境请务必**：
 
 * 使用 Sealed Secrets / External Secrets / Vault 管理密钥
 * 开启 ES 的 TLS（`xpack.security.http.ssl.enabled: true`）
 * 为 Kibana / Logstash 创建最小权限专用账户，不用 elastic 超级用户
 * 通过 CI 注入密码，绝不提交到 git
 
-> 📋 密码从"明文学习模式"到"CI 注入生产模式"再到"K8s 原生密钥管理"的完整演进方案（v0.3.0 → v0.5.0 路线图）见 **[docs/secrets-management.md](docs/secrets-management.md)**。三阶段已全部实施：本地 `.env`（v0.3.0）/ CI Secrets 渲染（v0.4.0）/ SealedSecrets（v0.5.0）。
+> 📋 密码从"明文学习模式"到"CI 注入生产模式"再到"K8s 原生密钥管理"的完整演进方案（v0.3.0 → v0.5.0 路线图）见 **[docs/secrets-management.md](docs/secrets-management.md)**。三阶段已全部实施：本地 `.env`（v0.3.0）/ CI Secrets 渲染（v0.4.0）/ SealedSecrets（v0.5.0）；后续收敛：明文 `secret.yaml` 已删除，本地与 CI 统一为模板渲染注入（CI leak-guard 全仓扫描防回归）。
 
 ## 9. 贡献指南
 

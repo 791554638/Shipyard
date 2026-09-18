@@ -11,10 +11,50 @@
   * minikube: `minikube addons enable ingress`
   * kind: 参考 [kind 文档](https://kind.sigs.k8s.io/) 装 contour / nginx-ingress
 
+## 快速路径：内循环部署（v0.6.0，推荐）
+
+> 改一行代码 → `make dev` → 集群里跑的就是新代码，全程零手工作业。
+> 需要自建 kind 集群（现成集群如 docker-desktop 无法配置 containerd mirror，本地 registry 方案不可用）。
+
+**前置**：`brew install kind`（一次性）
+
+```bash
+# 首次：创建 kind 集群 + 本地 registry + 全量部署（等待所有服务就绪）
+make init
+
+# 日常迭代：build → push → apply → rollout status（唯一入口）
+make dev
+
+# 访问（端口转发，Ctrl+C 结束）
+make ui
+
+# 其他：make logs / make status / make registry / make clean
+```
+
+### 架构：本地 registry + containerd mirror
+
+```
+宿主机 docker ──push──→ localhost:5001 ─┐
+                                         ▼
+                              registry 容器（cfa-registry，kind 网络）
+                                         ▲
+kind 节点 ──pull localhost:5001──mirror──┘（kind-config.yaml containerdConfigPatches）
+```
+
+* **镜像 tag = git sha**：`localhost:5001/cfa-php:sha-a1b2c3d`，与 GHCR 引用（`ghcr.io/<owner>/cfa-php:sha-a1b2c3d`）**结构完全同构**，v0.9.0 切换外循环只需换前缀
+* **工作区有未提交改动时**：tag 自动追加 `-dirty<时间戳>` 后缀（确保集群重新拉取），提交后恢复干净的 sha 形式
+* **闭环终点是验证**：`make dev` 内置 `kubectl rollout status`，失败非零退出并打印定位命令——不会"apply 完就假成功"
+* **Secret 注入与 CI 同构**：`make init` 从 `.env` 渲染 `k8s/secret.yaml.tpl`（envsubst 管道，明文不落盘、不进 git）
+
+### 镜像注入方式：Kustomize 临时 overlay
+
+`scripts/dev-deploy.sh` 在临时目录生成只含 `images:` override 的 Kustomization，指向 `k8s/`（见 `k8s/kustomization.yaml`）——git 工作区零污染，且为 v0.7.0 components / v1.2.0 多环境 overlay 铺路。**不要**用 `kubectl set image`（会造成 git 与集群漂移）或手改 manifest（污染工作区）。
+
 ## 1. 一键部署
 
 ```bash
 cd cfa
+cp .env.example .env   # 首次使用：创建密码文件（deploy.sh 从它渲染 Secret）
 ./scripts/deploy.sh
 ```
 
@@ -28,8 +68,9 @@ cd cfa
 # 2.1 Namespace
 kubectl apply -f k8s/namespace.yaml
 
-# 2.2 Secret（MySQL / 应用密码）
-kubectl apply -f k8s/secret.yaml
+# 2.2 Secret（MySQL / 应用密码）—— 从 .env 渲染注入，明文不进 git
+set -a; source .env; set +a
+envsubst < k8s/secret.yaml.tpl | kubectl apply -f -
 
 # 2.3 ConfigMap（所有配置）
 kubectl apply -f k8s/config/

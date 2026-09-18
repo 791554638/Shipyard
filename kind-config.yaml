@@ -1,0 +1,21 @@
+# kind 集群配置：个人研发环境（v0.6.0 内循环）
+#
+# 使用：./scripts/dev-cluster.sh create   （自动读取本文件）
+# 背景：docker-desktop 等现成集群无法配置 containerd mirror，
+#       本地 registry 方案必须用 kind 自建集群（见 docs/roadmap.md §4.2）
+---
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: cfa
+# ⚠️ 最关键的配置：containerd mirror
+# kind 节点是容器，节点内的 localhost:5001 ≠ 宿主机端口。
+# 必须把节点内的 localhost:5001 镜像源 mirror 到 registry 容器（kind 网络 DNS 名），
+# 否则 Pod 拉镜像必然 ImagePullBackOff。
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
+      endpoint = ["http://cfa-registry:5000"]
+# 双节点：control-plane + worker（为后续调度 / 拓扑实验预留）
+nodes:
+  - role: control-plane
+  - role: worker

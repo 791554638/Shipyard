@@ -126,7 +126,8 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: ""   # 用集群默认 StorageClass
+        # storageClassName 省略 = 用集群默认 SC（admission 自动填充）。
+        # ⚠️ 不要写 storageClassName: ""——那是"禁用动态供给、只绑现成 PV"，会永远 Pending
         resources:
           requests:
             storage: 8Gi

@@ -1,0 +1,33 @@
+# Kustomize 入口：K8s 全量资源清单（v0.6.0）
+#
+# 设计（见 docs/roadmap.md §4.2③）：
+#   - 本文件保持「纯资源清单」，不含 images override
+#   - 镜像 tag（git sha）由 scripts/dev-deploy.sh 生成临时 overlay 注入
+#     → git 工作区零污染、部署可复现，v0.7.0 components / v1.2.0 overlay 复用同一结构
+#   - Secret 不在此列：learn 模式由脚本从 .env 渲染管道 apply（与 CI 注入同构）
+#   - 日志链路（logstash / filebeat）暂未纳入，与 scripts/deploy.sh 行为一致
+#   - 注意：Kustomize 目录引用要求子目录也含 kustomization.yaml，
+#     故此处用显式文件列表（新增 manifest 时记得同步）
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  # config
+  - config/es-config.yaml
+  - config/kibana-config.yaml
+  - config/mysql-config.yaml
+  - config/nginx-config.yaml
+  - config/php-config.yaml
+  - config/redis-config.yaml
+  # 有状态服务
+  - mysql/statefulset.yaml
+  - redis/statefulset.yaml
+  - elasticsearch/statefulset.yaml
+  # 无状态应用
+  - kibana/deployment.yaml
+  - php/deployment.yaml
+  - nginx/deployment.yaml
+  # 外部入口
+  - ingress.yaml
