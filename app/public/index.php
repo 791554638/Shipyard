@@ -3,7 +3,9 @@
  * CFA 应用入口
  *
  * 用于演示 K8s 中 PHP 应用如何连接 MySQL / Redis / Elasticsearch。
- * 三个连接都通过环境变量配置，便于在不同环境（dev/staging/prod）切换。
+ * 所有连接参数（含密码）一律来自环境变量，代码不保留任何明文兜底：
+ *   - K8s     ：由 Secret cfa-secret 注入（见 k8s/php/deployment.yaml）
+ *   - Compose ：由 .env 注入（见 .env.example）
  */
 
 declare(strict_types=1);
@@ -63,7 +65,11 @@ function mysqlDemo(): string
     $port = getenv('MYSQL_PORT') ?: '3306';
     $db   = getenv('MYSQL_DB')   ?: 'cfa';
     $user = getenv('MYSQL_USER') ?: 'cfa';
-    $pass = getenv('MYSQL_PASSWORD') ?: 'cfapass';
+    $pass = getenv('MYSQL_PASSWORD');
+
+    if ($pass === false || $pass === '') {
+        return "MySQL FAIL: 未配置 MYSQL_PASSWORD（K8s 由 cfa-secret 注入，Compose 由 .env 注入）\n";
+    }
 
     try {
         $dsn = "mysql:host={$host};port={$port};dbname={$db};charset=utf8mb4";
@@ -98,12 +104,21 @@ function esDemo(): string
 {
     $host = getenv('ES_HOST') ?: 'elasticsearch';
     $port = getenv('ES_PORT') ?: '9200';
+    $user = getenv('ES_USER') ?: 'elastic';
+    $pass = getenv('ELASTIC_PASSWORD');
+
+    if ($pass === false || $pass === '') {
+        return "ES FAIL: 未配置 ELASTIC_PASSWORD（ES 已启用 xpack.security，必须认证）\n";
+    }
+
     $url  = "http://{$host}:{$port}/_cluster/health";
 
-    $ctx = stream_context_create(['http' => ['timeout' => 3]]);
+    // ES 8.x 默认开启安全认证，必须携带 Basic Auth
+    $auth = 'Authorization: Basic ' . base64_encode("{$user}:{$pass}");
+    $ctx  = stream_context_create(['http' => ['timeout' => 3, 'header' => $auth]]);
     $resp = @file_get_contents($url, false, $ctx);
     if ($resp === false) {
-        return "ES FAIL: cannot reach {$url}\n";
+        return "ES FAIL: cannot reach {$url}（检查认证或网络）\n";
     }
     $data = json_decode($resp, true);
     return sprintf("ES OK: status=%s, nodes=%d\n", $data['status'] ?? '?', $data['number_of_nodes'] ?? 0);

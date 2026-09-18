@@ -4,7 +4,8 @@
 # 前置条件：
 #   1. 已安装 kubectl 并能连上集群（kubectl cluster-info）
 #   2. 集群有默认 StorageClass（kubectl get sc）
-#   3. 已构建自定义镜像：cfa/php:8.2 与 cfa/nginx:1.25
+#   3. 已创建 .env（cp .env.example .env）—— learn 模式渲染 Secret 必需
+#   4. 已构建自定义镜像：cfa/php:8.2 与 cfa/nginx:1.25
 #      docker build -t cfa/php:8.2  -f docker/app/Dockerfile .
 #      docker build -t cfa/nginx:1.25 -f docker/nginx/Dockerfile .
 #
@@ -15,7 +16,7 @@
 #   ./scripts/deploy.sh --skip-ingress           # 跳过 Ingress（裸集群无 Controller）
 #
 # 模式说明：
-#   learn（默认）：apply k8s/secret.yaml（明文，学习用，clone 即跑）
+#   learn（默认）：从 .env 渲染 k8s/secret.yaml.tpl 注入（与 CI 同构，明文不落盘、不进 git）
 #   prod         ：apply k8s/sealed-secret.yaml（密文，controller 自动转 Secret）
 #                 需先运行 ./scripts/seal-secret.sh 生成
 
@@ -89,13 +90,36 @@ fi
 info "应用 Namespace / Secret / ConfigMap"
 kubectl apply -f k8s/namespace.yaml
 
-# 双模式：learn 用明文 secret.yaml，prod 用密文 sealed-secret.yaml
+# 双模式：learn 从 .env 渲染模板（与 CI 注入同构），prod 用密文 sealed-secret.yaml
 if [[ "${MODE}" == "prod" ]]; then
     info "[mode=prod] 应用 SealedSecret（controller 将自动解密为 Secret）"
     kubectl apply -f k8s/sealed-secret.yaml
 else
-    info "[mode=learn] 应用明文 Secret（仅本地学习）"
-    kubectl apply -f k8s/secret.yaml
+    info "[mode=learn] 从 .env 渲染 Secret（模板 + 环境变量注入，明文不落盘、不进 git）"
+    if [[ ! -f .env ]]; then
+        echo "错误: 未找到 .env —— 请先执行：cp .env.example .env"
+        exit 1
+    fi
+    command -v envsubst >/dev/null 2>&1 \
+        || { echo "错误: 未找到 envsubst（brew install gettext / apt install gettext-base）"; exit 1; }
+
+    # 导出 .env 全部变量（密码只存在于本进程环境）
+    set -a
+    # shellcheck disable=SC1091
+    source .env
+    set +a
+
+    # 与 CI secret-render 相同的防线：空值检查 + 占位符替换检查
+    for var in MYSQL_ROOT_PASSWORD MYSQL_PASSWORD ELASTIC_PASSWORD; do
+        [[ -n "$(printenv "$var")" ]] || { echo "错误: .env 中 ${var} 为空"; exit 1; }
+    done
+    RENDERED="$(envsubst < k8s/secret.yaml.tpl)"
+    if printf '%s' "$RENDERED" | grep -qE '\$\{[A-Z_]+\}'; then
+        echo "错误: 占位符未被替换（检查 .env 与 secret.yaml.tpl 变量名一致性）"
+        exit 1
+    fi
+    # 管道直传 kubectl，渲染结果不写文件（结构校验由 CI kubeconform 承担）
+    printf '%s' "$RENDERED" | kubectl apply -f -
 fi
 
 kubectl apply -f k8s/config/

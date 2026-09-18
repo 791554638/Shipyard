@@ -1,6 +1,8 @@
 # 本地一键起依赖
 # 与 k8s/ 下的 manifest 共享 services/ 下的所有配置
 #
+# 前置：cp .env.example .env（密码不再内置默认值，缺失即报错）
+#
 # 使用方式：
 #   docker compose up -d              启动所有服务
 #   docker compose up -d mysql redis  只启动部分
@@ -16,10 +18,10 @@ services:
     container_name: cfa-mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set in .env (cp .env.example .env)}
       MYSQL_DATABASE: cfa
       MYSQL_USER: cfa
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-cfapass}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set in .env (cp .env.example .env)}
     ports:
       - "3306:3306"
     volumes:
@@ -27,7 +29,7 @@ services:
       - ./services/mysql/conf/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
       - mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-rootpass}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:?set in .env (cp .env.example .env)}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -75,14 +77,14 @@ services:
       xpack.security.http.ssl.enabled: "false"
       xpack.security.transport.ssl.enabled: "false"
       # 自动设置 elastic 用户密码（首次启动时）
-      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD:-Cfa@Elastic2026}"
+      ELASTIC_PASSWORD: "${ELASTIC_PASSWORD:?set in .env (cp .env.example .env)}"
     ports:
       - "9200:9200"
     volumes:
       - ./services/elasticsearch/conf/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
       - es-data:/usr/share/elasticsearch/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf -u elastic:${ELASTIC_PASSWORD:-Cfa@Elastic2026} http://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf -u elastic:${ELASTIC_PASSWORD:?set in .env (cp .env.example .env)} http://localhost:9200/_cluster/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -96,7 +98,7 @@ services:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
       # 内部连接账户必须是 kibana_system（8.x 禁止用 elastic 超级用户连接）
       ELASTICSEARCH_USERNAME: kibana_system
-      ELASTICSEARCH_PASSWORD: "${ELASTIC_PASSWORD:-Cfa@Elastic2026}"
+      ELASTICSEARCH_PASSWORD: "${ELASTIC_PASSWORD:?set in .env (cp .env.example .env)}"
     ports:
       - "5601:5601"
     volumes:
@@ -115,7 +117,7 @@ services:
       XPACK_MONITORING_ENABLED: "false"
       # 连接 ES 的账号（elastic 全权限，学习用）
       ES_USER: elastic
-      ES_PASSWORD: "${ELASTIC_PASSWORD:-Cfa@Elastic2026}"
+      ES_PASSWORD: "${ELASTIC_PASSWORD:?set in .env (cp .env.example .env)}"
     ports:
       - "5044:5044"   # 应用直推（tcp/json_lines）
       - "5045:5045"   # filebeat 接入
@@ -134,7 +136,9 @@ services:
   # ========== PHP-FPM ==========
   php:
     build:
-      context: ./docker/app
+      # context 必须是项目根（Dockerfile 要 COPY app/），与 K8s/CI 构建命令保持一致
+      context: .
+      dockerfile: docker/app/Dockerfile
     image: cfa/php:8.2
     container_name: cfa-php
     restart: unless-stopped
@@ -148,7 +152,7 @@ services:
       MYSQL_PORT: 3306
       MYSQL_DB: cfa
       MYSQL_USER: cfa
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-cfapass}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set in .env (cp .env.example .env)}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       LOGSTASH_HOST: logstash

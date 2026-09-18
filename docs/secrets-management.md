@@ -37,8 +37,9 @@
 ```
 ┌─────────────────── 学习模式（默认，开箱即用）───────────────────┐
 │                                                                  │
-│  git clone → kubectl apply -f k8s/ → 起床（明文 secret.yaml）    │
-│             → docker compose up   → 起床（默认值兜底）           │
+│  cp .env.example .env（密码唯一来源）                            │
+│    → deploy.sh：.env 渲染 tpl → apply（明文不落盘、不进 git）    │
+│    → docker compose up：.env 注入（缺失即报错）                  │
 └──────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────── 生产模式（v0.5.0 完整形态）──────────────────┐
@@ -130,6 +131,11 @@
 | 密码存储 | GitHub Actions Secrets | 免费项目可用、与 CI 同平台零集成成本 |
 | 渲染产物 | **不落盘、不传 artifact** | 密码只存在于 job 内存与 K8s API |
 | `secret.yaml`（明文版）去留 | **保留** | 学习模式开箱即用；README 标注两种模式切换 |
+
+> **ADR 修订（凭据规范化收敛，2026-09-18）**：`secret.yaml`（明文版）由「保留」改为「删除」。
+> 动机：明文版与 `.tpl` 双路径并存是漂移根源；`.env.example` 已承担"开箱默认值"职责，明文版失去存在必要。
+> learn 模式改为与 CI **同构**的注入路径：`.env` → envsubst → `kubectl apply -f -`（不落盘），`deploy.sh` 已实现；
+> 同时 `secret-leak-guard` 升级为**全仓扫描**（学习默认密码只允许出现在白名单：`.env.example` / 本文档 / 守卫自身）。
 
 ### 交付物
 
@@ -244,7 +250,7 @@ kubeconform 校验 → 成功即丢弃
 
 3. **`k8s/sealed-secret.yaml`**：加密产物（可安全提交）
 4. **部署脚本 `scripts/deploy.sh` 增加 `--mode=learn|prod` 参数**：
-   - `learn`（默认）：apply 明文 `secret.yaml`
+   - `learn`（默认）：~~apply 明文 `secret.yaml`~~ → 现为 `.env` 渲染注入（见 v0.4.0 ADR 修订记录）
    - `prod`：apply `sealed-secret.yaml`
 
 ### 验收标准
@@ -279,4 +285,5 @@ kubeconform 校验 → 成功即丢弃
 
 - ❌ Vault / External Secrets Operator（需要额外基础设施，超出学习项目边界，v1.0 再议）
 - ❌ ES TLS 证书自动化（独立话题，与密码注入无关）
-- ❌ 删除明文 `secret.yaml`（学习模式的核心保留项）
+- ~~❌ 删除明文 `secret.yaml`（学习模式的核心保留项）~~
+  → **已修订（2026-09-18 凭据规范化收敛）**：明文版已删除，learn 模式统一为 `.env` 渲染注入，本地与 CI 同构（见 v0.4.0 ADR 修订记录）

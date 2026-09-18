@@ -7,7 +7,7 @@
 ```
 k8s/
 ├── namespace.yaml         # Namespace: cfa
-├── secret.yaml            # MySQL / 应用密码
+├── secret.yaml.tpl        # Secret 模板（.env / CI 渲染注入，明文不进 git）
 ├── config/                # ConfigMap
 │   ├── es-config.yaml
 │   ├── mysql-config.yaml
