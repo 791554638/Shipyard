@@ -62,3 +62,41 @@ jobs:
 
       - name: Run hadolint
         run: hadolint docker/app/Dockerfile docker/nginx/Dockerfile
+
+  # ============================================================
+  # CI 增强：Docker 镜像构建验证（只构建不推送）
+  # 防止 Dockerfile 改动后镜像构建失败却没被发现
+  # ============================================================
+  docker-build:
+    name: Docker build (no push)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build PHP-FPM image
+        run: docker build -t cfa/php:ci -f docker/app/Dockerfile .
+
+      - name: Build Nginx image
+        run: docker build -t cfa/nginx:ci docker/nginx
+
+  # ============================================================
+  # CI 增强：K8s manifest 客户端 dry-run 校验
+  # 不连接真实集群，仅做 schema/字段合法性检查
+  # ============================================================
+  k8s-dry-run:
+    name: K8s manifest dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        run: |
+          KUBE_VER=$(curl -sL https://dl.k8s.io/release/stable.txt)
+          curl -sLO "https://dl.k8s.io/release/${KUBE_VER}/bin/linux/amd64/kubectl"
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      - name: Validate manifests (client dry-run)
+        run: kubectl apply -f k8s/ -R --dry-run=client
