@@ -227,6 +227,8 @@ kubeconform 校验 → 成功即丢弃
 
 ## 7. v0.5.0 — Sealed Secrets（K8s 原生方案）
 
+> **状态：✅ 已实施（2026-09-18）** —— 三脚本集成（`install-sealed-secrets.sh` / `seal-secret.sh` / `deploy.sh --mode=prod`）已落地；`docs/sealed-secrets.md` 完整使用文档已发布。验收"controller 解密为 Secret"在生产/可联网集群跑（本机 registry mirror 限制 controller 镜像拉取，e2e 验证留给最终用户）。
+
 ### 范围
 解决"渲染后的 Secret 怎么安全地到达集群"——CI 产出 SealedSecret（密文），可安全提交 git，集群内 controller 解密。
 
@@ -268,8 +270,8 @@ kubeconform 校验 → 成功即丢弃
 
 - [x] **v0.3.0**：`.env.example` / compose 全参数化 / gitignore / 验收 4 项（tag `v0.3.0`）
 - [x] **v0.4.0**：`.tpl` 模板 / 3 个 GitHub Secrets / 2 个新 CI job / README 同步（tag `v0.4.0`）
-- [ ] **v0.5.0**：Sealed Secrets controller / seal-secret.sh / deploy.sh 双模式
-- [ ] 每版本：dev 开发 → CI 全绿 → PR → main → tag
+- [x] **v0.5.0**：Sealed Secrets controller / seal-secret.sh / deploy.sh 双模式（tag `v0.5.0`）
+- [x] 每版本：dev 开发 → CI 全绿 → PR → main → tag（v0.3.0 / v0.4.0 / v0.5.0 全遵循）
 
 ---
 
