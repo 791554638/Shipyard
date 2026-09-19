@@ -346,6 +346,24 @@ docker build -t cfa/nginx:ci docker/nginx
 
 * 主版本（`v1.0.0`）：不兼容的架构变更
 * 次版本（`v0.1.0`）：向后兼容的新功能
-* 修订版（`v0.0.1`）：向后兼容的 bug 修复
+* 修订版（`v0.0.1`）：向后兼容的 bug 修复 / 文档修正
+
+**发布节奏**：一版一主题、可独立验收、单独发 tag。`feat:` 在 `dev` 分支开发并通过
+CI 全绿后，以 `release: vX.Y.Z` merge commit 合入 `main`；tag 指向 `dev` 上的
+feat commit——与 Kustomize 注入集群的镜像 sha tag 同源，**版本、代码、镜像三者一一对应**。
+
+### 版本历史
+
+| 版本 | 主题 | 主线 |
+|---|---|---|
+| v0.1.1 | 项目骨架 + CI lint + 分支流程 | 能跑起来 |
+| v0.2.0 | CI 增强（Docker 构建 + K8s schema 校验） | 能验证 |
+| v0.3.0 | 本地 `.env` 参数化 | 能安全地跑起来 |
+| v0.4.0 | CI 参数注入（Secret 渲染 + 防泄漏守卫） | 能安全地跑起来 |
+| v0.5.0 | Sealed Secrets（K8s 原生密钥管理） | 能安全地跑起来 |
+| **v0.6.0（当前）** | 个人研发环境部署闭环（kind + 本地 registry，`make dev` 内循环） | 能闭环迭代 |
+
+后续版本规划（v0.7.0 组件化与可配置栈 → v1.3.0）见
+[docs/roadmap.md](docs/roadmap.md)。
 
 查看所有 release：[**Releases**](https://github.com/791554638/Shipyard/releases)
