@@ -42,7 +42,7 @@ kind 节点 ──pull localhost:5001──mirror──┘（kind-config.yaml co
 ```
 
 * **镜像 tag = git sha**：`localhost:5001/cfa-php:sha-a1b2c3d`，与 GHCR 引用（`ghcr.io/<owner>/cfa-php:sha-a1b2c3d`）**结构完全同构**，v0.9.0 切换外循环只需换前缀
-* **工作区有未提交改动时**：tag 自动追加 `-dirty<时间戳>` 后缀（确保集群重新拉取），提交后恢复干净的 sha 形式
+* **工作区有未提交改动时**：tag 自动追加 `-dirty<内容hash>` 确定性后缀（内容不变则 tag 不变，重复部署幂等），提交后恢复干净的 sha 形式
 * **闭环终点是验证**：`make dev` 内置 `kubectl rollout status`，失败非零退出并打印定位命令——不会"apply 完就假成功"
 * **Secret 注入与 CI 同构**：`make init` 从 `.env` 渲染 `k8s/secret.yaml.tpl`（envsubst 管道，明文不落盘、不进 git）
 
