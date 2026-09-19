@@ -41,3 +41,5 @@ secrets/local-*.yaml
 *.log
 logs/
 services/logs/
+# dev-deploy.sh 临时 Kustomize overlay（瞬时存在，用后即删）
+.ktmp/

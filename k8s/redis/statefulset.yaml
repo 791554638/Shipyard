@@ -73,7 +73,7 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: ""
+        # 省略 storageClassName = 用集群默认 SC（勿写 ""，那会禁用动态供给导致 Pending）
         resources:
           requests:
             storage: 1Gi

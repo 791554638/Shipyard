@@ -38,7 +38,9 @@ spec:
       # 生产应使用 topologySpreadConstraints / podAntiAffinity
       containers:
         - name: php
-          image: cfa/php:8.2   # 自定义镜像，需先构建：docker build -t cfa/php:8.2 -f docker/app/Dockerfile .
+          # 基线引用；实际部署时 tag 由 scripts/dev-deploy.sh 通过 Kustomize 注入
+          # （localhost:5001/cfa-php:sha-xxxxxxx，本地 registry，见 kind-config.yaml）
+          image: cfa/php:8.2
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9000
@@ -65,6 +67,12 @@ spec:
               value: "elasticsearch"
             - name: ES_PORT
               value: "9200"
+            # ES 开启 xpack.security 后应用访问必须认证（与 compose 注入对齐）
+            - name: ELASTIC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cfa-secret
+                  key: ELASTIC_PASSWORD
           volumeMounts:
             - name: config
               mountPath: /usr/local/etc/php/conf.d/zz-app.ini

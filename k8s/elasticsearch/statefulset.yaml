@@ -38,7 +38,11 @@ spec:
     spec:
       initContainers:
         - name: install-ik
-          image: busybox:1.36
+          # busybox 无 curl 且其 wget 的 TLS 栈过老（与现代 CDN 握手失败），
+          # 改用自带 curl + unzip 的官方镜像
+          image: curlimages/curl:8.11.0
+          securityContext:
+            runAsUser: 0   # 需写 emptyDir
           command: ["sh", "-c"]
           args:
             - |
@@ -80,8 +84,12 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /usr/share/elasticsearch/data
+            # ⚠️ 必须用 subPath 挂单文件：整目录挂载 ConfigMap 是只读的，
+            # ES 启动要往 config/ 写 keystore，整目录挂载会 CrashLoop
+            # （Read-only file system）
             - name: config
-              mountPath: /usr/share/elasticsearch/config
+              mountPath: /usr/share/elasticsearch/config/elasticsearch.yml
+              subPath: elasticsearch.yml
             - name: ik-shared
               mountPath: /usr/share/elasticsearch/plugins/analysis-ik
           resources:
@@ -91,18 +99,26 @@ spec:
             limits:
               cpu: 1000m
               memory: 2Gi
+          # ⚠️ 开启 xpack security 后 httpGet 探针必 401（probe 无法携带认证），
+          # 改用 exec 探针：容器内 curl + 环境变量注入的密码（ES 镜像自带 curl）
           readinessProbe:
-            httpGet:
-              path: /_cluster/health
-              port: 9200
+            exec:
+              command:
+                - sh
+                - -c
+                - curl -sf -u "elastic:$ELASTIC_PASSWORD" localhost:9200/_cluster/health
             initialDelaySeconds: 60
             periodSeconds: 15
+            timeoutSeconds: 5
           livenessProbe:
-            httpGet:
-              path: /_cluster/health
-              port: 9200
+            exec:
+              command:
+                - sh
+                - -c
+                - curl -sf -u "elastic:$ELASTIC_PASSWORD" localhost:9200/_cluster/health
             initialDelaySeconds: 90
             periodSeconds: 30
+            timeoutSeconds: 5
       volumes:
         - name: config
           configMap:
@@ -117,7 +133,7 @@ spec:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: ""
+        # 省略 storageClassName = 用集群默认 SC（勿写 ""，那会禁用动态供给导致 Pending）
         resources:
           requests:
             storage: 30Gi

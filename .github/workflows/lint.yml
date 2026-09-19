@@ -153,10 +153,11 @@ jobs:
           echo "✅ 模板渲染 + 校验通过（密码未落盘、未打印）"
 
   # ============================================================
-  # v0.4.0 防泄漏守卫：
+  # 防泄漏守卫：
   #   1) .env 不得被 git 跟踪
-  #   2) 模板只允许占位符，不得含学习默认值
-  #   3) 明文版 secret.yaml 与模板字段名一致（防漂移）
+  #   2) 全仓扫描：学习默认密码不得出现在任何被跟踪文件
+  #      白名单 = .env.example（默认值唯一来源）/ 密钥方案文档 / 本守卫自身
+  #   3) .env.example 与 secret.yaml.tpl 变量名一致（防漂移）
   # ============================================================
   secret-leak-guard:
     name: Secret leak guard
@@ -172,13 +173,16 @@ jobs:
             echo "::error::.env 被提交了！请 git rm --cached .env"
             exit 1
           fi
-          # 2) 模板不得包含明文默认值
-          if grep -qE 'rootpass|cfapass|Cfa@' k8s/secret.yaml.tpl; then
-            echo "::error::模板包含明文密码默认值，只允许 \${VAR} 占位符"
+          # 2) 全仓扫描学习默认密码（git grep 仅查被跟踪文件，白名单除外）
+          LEAKS=$(git grep -nE 'rootpass|cfapass|Cfa@' \
+              -- ':!.env.example' ':!docs/secrets-management.md' ':!.github/workflows/lint.yml' || true)
+          if [ -n "$LEAKS" ]; then
+            echo "::error::学习默认密码出现在非白名单文件（默认值唯一来源是 .env.example）："
+            echo "$LEAKS"
             exit 1
           fi
-          # 3) 明文版与模板的 stringData 字段必须一致
-          diff <(grep -oE '^  [A-Z_]+:' k8s/secret.yaml | tr -d ' :') \
-               <(grep -oE '^  [A-Z_]+:' k8s/secret.yaml.tpl | tr -d ' :') \
-            || { echo "::error::secret.yaml 与 secret.yaml.tpl 字段漂移，需同步修改"; exit 1; }
-          echo "✅ 无泄漏：.env 未跟踪 / 模板无明文 / 两版字段一致"
+          # 3) .env.example 的键与模板占位符必须一一对应
+          diff <(grep -oE '^[A-Z_]+=' .env.example | tr -d '=' | sort) \
+               <(grep -oE '\$\{[A-Z_]+\}' k8s/secret.yaml.tpl | tr -d '${}' | sort) \
+            || { echo "::error::.env.example 与 secret.yaml.tpl 变量名漂移，需同步修改"; exit 1; }
+          echo "✅ 无泄漏：.env 未跟踪 / 全仓无明文默认密码 / 模板变量一致"
