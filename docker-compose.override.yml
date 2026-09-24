@@ -1,0 +1,33 @@
+# 研发模式覆盖层（自动加载，无需 -f 指定）
+#
+# 工作机制：`docker compose up -d` 时 Docker Compose 自动将本文件合并到
+# docker-compose.yml 之上（同名数组项如 volumes 是追加合并）。
+# 生产模式请显式绕过本文件：
+#   docker compose -f docker-compose.yml up -d
+#
+# 与基础版的差异（研发专属）：
+#   1. php/nginx 挂载本地 ./app 代码目录 → 改代码保存即生效，无需重建镜像
+#   2. php 追加 php-dev.ini → OPcache 开启时间戳校验（生产 php.ini 为 0 会缓存旧代码），
+#      并屏蔽旧框架在 PHP 8.2 下的废弃警告
+#   3. nginx 追加 greenchina vhost（改 china.conf 后 nginx -s reload 即生效）
+#   4. APP_ENV=dev → 透传给应用做运行时行为差异
+
+services:
+
+  php:
+    volumes:
+      # 研发模式：本地代码目录直接挂载，改代码即时生效（覆盖镜像内 COPY 的代码）
+      - ./app:/var/www/html
+      # OPcache 时间戳校验 + 屏蔽废弃警告（旧框架 vendor 不可改）
+      - ./services/php/conf/php-dev.ini:/usr/local/etc/php/conf.d/zz-dev.ini:ro
+    environment:
+      APP_ENV: dev
+
+  nginx:
+    volumes:
+      # 研发模式：本地代码目录直接挂载（nginx 需要读静态文件）
+      - ./app:/var/www/html:ro
+      # vhost 目录整体挂载：nginx 自动加载 conf.d/*.conf，
+      # 新增本地项目只需在 docker/nginx/conf.d/ 丢一个 .conf 再 reload，无需改 compose。
+      # 注意：目录挂载会遮蔽镜像内的 default.conf，故 conf.d/default.conf 保留了一份副本。
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro

@@ -33,7 +33,9 @@ Filebeat ──:5045 (beats)──────┴──→ Logstash ──http+a
 ```
 shipyard/                    ← 项目根目录（repo 名与目录名可不同）
 ├── README.md                 ← 本文件
-├── docker-compose.yml        ← 本地一键起全部依赖
+├── docker-compose.yml        ← 基础编排（生产语义：代码在镜像内，v0.7.0 分层）
+├── docker-compose.override.yml ← 研发模式覆盖层（代码挂载+热更新，自动合并，v0.7.0）
+├── .dockerignore             ← 构建上下文裁剪（本地项目/依赖/密钥绝不进镜像，v0.7.0）
 ├── Makefile                  ← 内循环入口：make init / dev / ui / logs（v0.6.0）
 ├── kind-config.yaml          ← kind 集群配置（本地 registry mirror，v0.6.0）
 ├── .gitignore
@@ -46,11 +48,14 @@ shipyard/                    ← 项目根目录（repo 名与目录名可不同
 ├── app/                      ← PHP 业务代码
 │   ├── public/index.php      ← 入口（通过 Nginx + PHP-FPM）
 │   ├── src/                  ← 业务逻辑
-│   └── composer.json
+│   ├── composer.json
+│   └── greenchina/           ← 本地研发项目示例（Laravel，gitignore+dockerignore，仅 bind mount）
 │
 ├── docker/                   ← 自定义镜像构建
 │   ├── app/Dockerfile        ← PHP 应用镜像（代码进镜像 + ARG 参数化，v0.6.0）
-│   └── nginx/Dockerfile      ← Nginx 镜像（含 vhost 配置）
+│   ├── nginx/Dockerfile      ← Nginx 镜像（仅含 default.conf，本地项目 vhost 不进镜像）
+│   ├── nginx/conf.d/         ← 研发模式 vhost 目录（整体挂载 → conf.d/*.conf 自动加载，v0.7.0）
+│   └── nginx/README.md       ← 本地多项目 vhost 接入指南（含 default.conf 双副本同步规则）
 │
 ├── services/                 ← 各组件的原始配置，与 K8s / docker-compose 共享
 │   ├── elasticsearch/conf/elasticsearch.yml
@@ -116,7 +121,17 @@ shipyard/                    ← 项目根目录（repo 名与目录名可不同
 
 ## 5. 快速开始
 
-### 5.1 本地（docker-compose）
+### 5.1 本地（docker-compose，研发/生产双模式）
+
+v0.7.0 起本地编排按 **override 分层**设计：
+
+| 启动命令 | 加载文件 | 代码来源 | 适用场景 |
+|---|---|---|---|
+| `docker compose up -d` | 基础 + override（自动合并） | bind mount `./app`，改代码即生效 | 日常研发 |
+| `docker compose -f docker-compose.yml up -d` | 仅基础文件 | 镜像内 `COPY app/`（与 K8s 行为一致） | 生产演练 / CI 验证 |
+
+> 研发模式额外生效：OPcache 时间戳校验（热更新）、屏蔽旧框架废弃警告、`docker/nginx/conf.d/` vhost 目录挂载（`APP_ENV=dev`）。
+> 两者代码来源不同但**同一个镜像**——研发模式的挂载只是遮蔽镜像内代码，切换模式无需重建。
 
 ```bash
 # 首次使用：创建本地密码文件（学习默认值见 .env.example）
@@ -125,7 +140,7 @@ cp .env.example .env
 # 构建自定义镜像（PHP 应用 + Nginx）
 docker compose build
 
-# 启动所有服务
+# 启动所有服务（默认研发模式）
 docker compose up -d
 
 # 查看状态（ES 健康检查通过后 Kibana/Logstash 才会启动）
@@ -138,6 +153,26 @@ open http://localhost:5601      # Kibana（登录见下表）
 # 关闭
 docker compose down
 ```
+
+#### 本地多项目接入（研发模式）
+
+本地项目（如 `app/greenchina`）通过 vhost 目录自动加载，**无需改任何 compose 配置**：
+
+```bash
+# 1. 项目代码放进 app/（已被 .gitignore / .dockerignore 排除，绝不入仓/入镜像）
+# 2. 加一个 vhost 文件到 docker/nginx/conf.d/（server_name 区分项目）
+cp docker/nginx/conf.d/china.conf docker/nginx/conf.d/你的项目.conf   # 改 server_name 与 root
+
+# 3. reload 即生效（nginx 自动 include conf.d/*.conf）
+docker exec cfa-nginx nginx -s reload
+
+# 4. 浏览器访问（hosts 加：127.0.0.1 www.你的域名.com，端口 8080）
+curl -H 'Host: www.你的域名.com' http://localhost:8080/
+```
+
+> 注意事项：
+> * `docker/nginx/conf.d/default.conf` 是镜像内 `default.conf` 的副本（目录挂载会遮蔽镜像内文件），修改默认站点时两处需同步
+> * vhost 的 `fastcgi_pass php:9000` 不变；项目若需不同 PHP 版本，需另起 php 服务并改指向（如 greenchina 需 PHP 7.x，当前镜像为 8.2）
 
 ### 5.2 账号密码（⚠️ 仅本地学习用）
 
@@ -221,7 +256,7 @@ kubectl apply -f k8s/ingress.yaml
 
 按下面顺序阅读源码与 manifest，每步都能跑通：
 
-1. **本地 docker-compose** —— 看 `docker-compose.yml`，理解服务如何编排、健康检查与启动顺序
+1. **本地 docker-compose** —— 看 `docker-compose.yml` + `docker-compose.override.yml`，理解服务编排、健康检查、启动顺序，以及 v0.7.0 的研发/生产分层（override 合并机制）
 2. **从无状态开始** —— `k8s/nginx/` + `k8s/php/`：Deployment + Service + ConfigMap
 3. **ConfigMap 与 Secret** —— `k8s/config/` + `k8s/secret.yaml.tpl`：配置与密钥分离（模板 + 注入）
 4. **有状态服务** —— `k8s/mysql/` + `k8s/redis/`：StatefulSet + PVC + headless Service
@@ -236,6 +271,9 @@ kubectl apply -f k8s/ingress.yaml
 * **PVC Pending？** 集群需要默认 StorageClass，本地用 `minikube` 自带，kind 需要手动装
 * **ES 启动慢？** 正常现象，JVM 启动 + IK 安装 + 索引恢复需要 1-3 分钟
 * **PHP 连不上 MySQL？** K8s 中用 service 名 `mysql`（同 namespace），不是 `localhost`
+* **改代码不生效？** 确认是研发模式启动（`docker compose up -d` 而非 `-f` 显式指定）；研发模式由 override 文件开启 OPcache 时间戳校验，生产模式的 `php.ini` 会缓存旧代码
+* **MySQL 端口启动失败 "port is already allocated"？** 宿主机 3306 被其他项目容器占用（如 `web_mysql`），停掉冲突容器或修改 compose 端口映射
+* **本地项目页面空白/500？** 检查项目所需 PHP 版本——镜像为 PHP 8.2，Laravel 5.x 等旧框架（要求 PHP 7.x）会静默死亡（exit 255 无输出）
 * **Logstash 崩溃循环 "read-only file system"？** `logstash.yml` 不能只读挂载——官方镜像 entrypoint 要把环境变量写回该文件，配置一律走环境变量
 * **Kibana 起不来 "username elastic is forbidden"？** 8.x 禁止用 elastic 超级用户做内部连接，必须用 `kibana_system`（见 5.4 的密码设置命令）
 * **Navicat 连 MySQL 报 "caching_sha2_password cannot be loaded"？** Navicat 版本太老（<12.1），执行 `ALTER USER 'cfa'@'%' IDENTIFIED WITH mysql_native_password BY '<你的 MYSQL_PASSWORD>';`
@@ -361,7 +399,16 @@ feat commit——与 Kustomize 注入集群的镜像 sha tag 同源，**版本�
 | v0.3.0 | 本地 `.env` 参数化 | 能安全地跑起来 |
 | v0.4.0 | CI 参数注入（Secret 渲染 + 防泄漏守卫） | 能安全地跑起来 |
 | v0.5.0 | Sealed Secrets（K8s 原生密钥管理） | 能安全地跑起来 |
-| **v0.6.0（当前）** | 个人研发环境部署闭环（kind + 本地 registry，`make dev` 内循环） | 能闭环迭代 |
+| v0.6.0 | 个人研发环境部署闭环（kind + 本地 registry，`make dev` 内循环） | 能闭环迭代 |
+| v0.6.1 | 版本与发布文档对齐 | 能闭环迭代 |
+| **v0.7.0（当前）** | 本地研发模式：compose override 分层 + 多项目 vhost + 构建上下文治理 | **能闭环迭代** |
+
+v0.7.0 交付内容：
+
+* compose override 分层——研发模式（代码 bind mount + OPcache 热更新）与生产模式（镜像内代码，与 K8s 行为一致）一条命令切换
+* 本地多项目接入——`docker/nginx/conf.d/` vhost 目录整体挂载，新项目零改 compose
+* `.dockerignore` 构建上下文治理——本地项目目录、`.env` 凭据、node_modules 绝不进镜像
+* `APP_ENV` 环境参数——运行时行为差异与代码挂载职责分离
 
 后续版本规划（v0.7.0 组件化与可配置栈 → v1.3.0）见
 [docs/roadmap.md](docs/roadmap.md)。

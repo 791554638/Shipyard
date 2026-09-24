@@ -1,10 +1,16 @@
-# 本地一键起依赖
+# 基础编排（生产语义）：代码 COPY 进镜像（见 docker/app/Dockerfile），不挂载项目目录
 # 与 k8s/ 下的 manifest 共享 services/ 下的所有配置
 #
-# 前置：cp .env.example .env（密码不再内置默认值，缺失即报错）
+# 环境分层（v0.7.0 研发模式）：
+#   docker compose -f docker-compose.yml up -d   ← 生产模式：显式仅加载本文件，代码来自镜像
+#   docker compose up -d                          ← 研发模式：自动合并 docker-compose.override.yml
+#                                                   （代码目录挂载、OPcache 热更新、greenchina vhost）
+#   差异明细见 docker-compose.override.yml
+#
+# 前置：cp .env.example .env（密码与 APP_ENV，缺失即报错）
 #
 # 使用方式：
-#   docker compose up -d              启动所有服务
+#   docker compose up -d              启动所有服务（研发模式）
 #   docker compose up -d mysql redis  只启动部分
 #   docker compose logs -f php        看日志
 #
@@ -143,11 +149,14 @@ services:
     container_name: cfa-php
     restart: unless-stopped
     volumes:
-      - ./app:/var/www/html
+      # 生产语义：代码在镜像内（docker/app/Dockerfile 的 COPY app/），
+      # 研发模式的代码挂载见 docker-compose.override.yml
       - ./services/php/conf/php.ini:/usr/local/etc/php/php.ini:ro
       # 日志写到共享目录供 filebeat 采集
       - ./services/logs/php:/var/log/php
     environment:
+      # 运行环境标识（应用行为差异：调试开关/日志级别等），代码挂载与否由 override 文件决定
+      APP_ENV: ${APP_ENV:-prod}
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
       MYSQL_DB: cfa
@@ -173,7 +182,7 @@ services:
     ports:
       - "8080:80"
     volumes:
-      - ./app:/var/www/html:ro
+      # 生产语义：代码在镜像内；研发模式的代码挂载与 greenchina vhost 见 override 文件
       - ./services/nginx/conf/nginx.conf:/etc/nginx/nginx.conf:ro
       # 日志写到共享目录供 filebeat 采集
       - ./services/logs/nginx:/var/log/nginx

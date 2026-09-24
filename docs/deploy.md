@@ -60,6 +60,35 @@ cp .env.example .env   # 首次使用：创建密码文件（deploy.sh 从它渲
 
 脚本会依次 apply 所有 manifest，最后给出访问地址与端口转发命令。
 
+## 1.5 本地 docker-compose：研发 / 生产双模式（v0.7.0）
+
+本地编排与 K8s 共享 `services/` 配置，通过 **override 分层**区分两种模式：
+
+```bash
+# 研发模式（默认）：自动合并 docker-compose.override.yml
+docker compose up -d
+#   → php/nginx 挂载 ./app（改代码即生效，无需重建镜像）
+#   → php 追加 php-dev.ini（OPcache 时间戳校验 + 屏蔽旧框架废弃警告）
+#   → nginx 挂载 docker/nginx/conf.d/（vhost 目录自动加载）
+#   → APP_ENV=dev
+
+# 生产模式：显式仅加载基础文件（验证镜像自包含，行为与 K8s 一致）
+docker compose -f docker-compose.yml up -d
+#   → 代码来自镜像 COPY app/，不挂载本地目录
+#   → APP_ENV 取 .env（生产部署时应设为 prod）
+```
+
+**为什么用 override 文件而不是参数开关**：compose 不支持条件卷挂载（`volumes` 有就是有）；分层文件让差异显式可见——研发是默认零操作，生产需主动声明，方向安全。
+
+### 本地多项目接入（研发模式）
+
+新项目只需两步，**不改 compose**：
+
+1. 代码放 `app/`（gitignore + dockerignore 已排除，不污染仓库与镜像）
+2. vhost 丢进 `docker/nginx/conf.d/*.conf`（nginx 自动 include），`docker exec cfa-nginx nginx -s reload`
+
+已知限制：所有项目共用 `php:9000`（PHP 8.2）。需要 PHP 7.x 的旧项目（如 Laravel 5.x）需另起对应版本的 php 服务并修改 vhost 的 `fastcgi_pass` 指向。
+
 ## 2. 分步部署（推荐学习用）
 
 每一步用 `kubectl get pods -n cfa` 看 Pod 状态，等 `Running` 后再走下一步。
