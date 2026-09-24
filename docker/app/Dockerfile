@@ -38,9 +38,10 @@ COPY --chown=www-data:www-data app/ /var/www/html/
 WORKDIR /var/www/html
 
 # 健康检查（仅 docker-compose 使用，K8s 用 readinessProbe）
-# 用 busybox 自带的 pgrep 检测 php-fpm 主进程（alpine 默认已含）
+# 用 pgrep -f 匹配完整命令行：alpine 中 comm 超过 15 字符会被截断，
+# pgrep -x php-fpm 匹配不到 "php-fpm: master process"
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD pgrep -x php-fpm > /dev/null || exit 1
+    CMD pgrep -f "php-fpm: master" > /dev/null || exit 1
 
 # 暴露 FPM 端口
 EXPOSE 9000

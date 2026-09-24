@@ -1,0 +1,36 @@
+# Docker 构建上下文裁剪（作用于项目根 context：docker/app/Dockerfile 与 CI/K8s 构建）
+# 目的：镜像只包含运行所需内容，杜绝本地研发产物与敏感信息进镜像
+
+# ---- 版本库 / IDE 元数据 ----
+.git
+.github
+.idea
+.vscode
+.DS_Store
+
+# ---- 敏感配置（绝不进镜像）----
+.env
+.env.local
+**/.env
+
+# ---- 研发专用本地项目 ----
+# greenchina 只通过研发模式 bind mount（docker-compose.override.yml）使用，
+# 其 vendor(557M)/node_modules(282M) 与 .env（远程 DB 凭据）绝不打入镜像
+app/greenchina/
+
+# ---- 依赖目录（镜像内按需安装，不 COPY 宿主机副本）----
+**/node_modules/
+
+# ---- 运行时数据 / 日志 ----
+services/logs/
+
+# ---- 与镜像无关的仓库内容 ----
+docs/
+k8s/
+scripts/
+docker-compose.yml
+docker-compose.override.yml
+kind-config.yaml
+Makefile
+README.md
+LICENSE
